@@ -1,0 +1,9 @@
+{
+  "url": "https://nodebb-3phv.onrender.com",
+  "secret": "0797e04b-bc92-43e1-95ca-99a104f17e6f",
+  "database": "mongo",
+  "mongo": {
+    "uri": "mongodb+srv://130105630610a_db_user:sgfCoag5EPgC0VW0@cluster0.gqtzpi5.mongodb.net/nodebb?retryWrites=true&w=majority&appName=Cluster0"
+  },
+  "port": "10000"
+}
