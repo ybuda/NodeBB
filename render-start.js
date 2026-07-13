@@ -26,6 +26,16 @@ const templatesDir = path.join(__dirname, 'build', 'public', 'templates');
 const requiredTemplates = ['categories.tpl', 'categories.js', 'header.js', 'footer.js'];
 const missingTemplates = () => requiredTemplates.filter(file => !fs.existsSync(path.join(templatesDir, file)));
 
+// The Render free runtime can omit generated views from the build artifact.
+// Keep a matching, precompiled set from the local NodeBB installation as a
+// fallback so Express always has the views it needs to render the forum.
+if (missingTemplates().length) {
+	const fallbackTemplates = path.join(__dirname, 'prebuilt', 'templates');
+	if (fs.existsSync(fallbackTemplates)) {
+		fs.cpSync(fallbackTemplates, templatesDir, { recursive: true });
+	}
+}
+
 if (missingTemplates().length) {
 	const result = spawnSync(process.execPath, ['nodebb', 'build', 'templates', '--series'], {
 		cwd: __dirname,
