@@ -22,8 +22,11 @@ fs.writeFileSync(path.join(__dirname, 'config.json'), `${JSON.stringify(config, 
 // Render's build image does not always retain generated NodeBB template views
 // in the running image. Compile only the templates on startup if they are
 // missing; this is lightweight and avoids a full webpack build at runtime.
-const homeTemplate = path.join(__dirname, 'build', 'public', 'templates', 'home.tpl');
-if (!fs.existsSync(homeTemplate)) {
+const templatesDir = path.join(__dirname, 'build', 'public', 'templates');
+const requiredTemplates = ['categories.tpl', 'categories.js', 'header.js', 'footer.js'];
+const missingTemplates = () => requiredTemplates.filter(file => !fs.existsSync(path.join(templatesDir, file)));
+
+if (missingTemplates().length) {
 	const result = spawnSync(process.execPath, ['nodebb', 'build', 'templates', '--series'], {
 		cwd: __dirname,
 		stdio: 'inherit',
@@ -32,6 +35,11 @@ if (!fs.existsSync(homeTemplate)) {
 	if (result.status !== 0) {
 		throw new Error('Unable to compile NodeBB templates at startup.');
 	}
+}
+
+const stillMissing = missingTemplates();
+if (stillMissing.length) {
+	throw new Error(`NodeBB template build did not create: ${stillMissing.join(', ')}`);
 }
 
 // Keep the loader in the foreground for Render, with logs sent to stdout.
