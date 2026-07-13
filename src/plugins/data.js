@@ -17,10 +17,16 @@ const basePath = path.join(__dirname, '../../');
 // to get this functionality use `plugins.getActive()` from `src/plugins/install.js` instead
 // this method duplicates that one, because requiring that file here would have side effects
 async function getActiveIds() {
-	if (nconf.get('plugins:active')) {
-		return nconf.get('plugins:active');
-	}
-	return await db.getSortedSetRange('plugins:active', 0, -1);
+	const active = nconf.get('plugins:active') || await db.getSortedSetRange('plugins:active', 0, -1);
+
+	// NodeBB's default composer is required by core client modules (for example,
+	// topic thumbnail updates).  On a brand-new database it is not yet listed in
+	// `plugins:active` when the first production build runs, which leaves its AMD
+	// modules out of build/public and causes webpack to fail to resolve `composer`.
+	return active.includes('nodebb-plugin-composer-default') ? active : [
+		...active,
+		'nodebb-plugin-composer-default',
+	];
 }
 
 Data.getPluginPaths = async function () {
