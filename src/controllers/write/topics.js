@@ -3,7 +3,6 @@
 const db = require('../../database');
 const api = require('../../api');
 const topics = require('../../topics');
-const activitypub = require('../../activitypub');
 
 const helpers = require('../helpers');
 const middleware = require('../../middleware');
@@ -135,31 +134,32 @@ Topics.getThumbs = async (req, res) => {
 
 Topics.addThumb = async (req, res) => {
 	// todo: move controller logic to src/api/topics.js
-	await api.topics._checkThumbPrivileges({ tid: req.params.tid, uid: req.uid });
+	await api.topics._checkThumbPrivileges({ tid: req.params.tid, uid: req.user.uid });
 
 	const files = await uploadsController.uploadThumb(req, res); // response is handled here
 
-	// Add uploaded files to topic hash
+	// Add uploaded files to topic zset
 	if (files && files.length) {
-		for (const fileObj of files) {
-			// eslint-disable-next-line no-await-in-loop
+		await Promise.all(files.map(async (fileObj) => {
 			await topics.thumbs.associate({
 				id: req.params.tid,
-				path: fileObj.url,
+				path: fileObj.path || fileObj.url,
 			});
-		}
+		}));
 	}
 };
 
+Topics.migrateThumbs = async (req, res) => {
+	await api.topics.migrateThumbs(req, {
+		from: req.params.tid,
+		to: req.body.tid,
+	});
+
+	helpers.formatApiResponse(200, res, await api.topics.getThumbs(req, { tid: req.body.tid }));
+};
 
 Topics.deleteThumb = async (req, res) => {
-	if (!req.body.path && !req.query.path) {
-		return helpers.formatApiResponse(400, res, new Error('[[error:invalid-data]]'));
-	}
-
-	const path = req.body.path || req.query.path;
-
-	if (!path.startsWith('http')) {
+	if (!req.body.path.startsWith('http')) {
 		await middleware.assert.path(req, res, () => {});
 		if (res.headersSent) {
 			return;
@@ -168,7 +168,7 @@ Topics.deleteThumb = async (req, res) => {
 
 	await api.topics.deleteThumb(req, {
 		tid: req.params.tid,
-		path: path,
+		path: req.body.path,
 	});
 	helpers.formatApiResponse(200, res, await topics.thumbs.get(req.params.tid));
 };
@@ -219,25 +219,4 @@ Topics.move = async (req, res) => {
 	await api.topics.move(req, { cid, ...req.params });
 
 	helpers.formatApiResponse(200, res);
-};
-
-Topics.getCrossposts = async (req, res) => {
-	const crossposts = await topics.crossposts.get(req.params.tid);
-	helpers.formatApiResponse(200, res, { crossposts });
-};
-
-Topics.crosspost = async (req, res) => {
-	const { cid } = req.body;
-	const crossposts = await topics.crossposts.add(req.params.tid, cid, req.uid);
-	await activitypub.out.announce.topic(req.params.tid, req.uid);
-
-	helpers.formatApiResponse(200, res, { crossposts });
-};
-
-Topics.uncrosspost = async (req, res) => {
-	const cid = req.body.cid || req.query.cid;
-	const crossposts = await topics.crossposts.remove(req.params.tid, cid, req.uid);
-
-	await activitypub.out.undo.announce('uid', req.uid, req.params.tid);
-	helpers.formatApiResponse(200, res, { crossposts });
 };

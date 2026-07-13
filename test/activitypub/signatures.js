@@ -4,9 +4,9 @@ const assert = require('assert');
 const nconf = require('nconf');
 const { createHash } = require('crypto');
 
-const db = require('../mocks/databasemock');
 const user = require('../../src/user');
 const utils = require('../../src/utils');
+const db = require('../../src/database');
 const activitypub = require('../../src/activitypub');
 
 describe('http signature signing and verification', () => {
@@ -35,20 +35,20 @@ describe('http signature signing and verification', () => {
 
 			assert(signature);
 			assert(dateObj);
-			assert.strictEqual(digest, undefined);
+			assert.strictEqual(digest, null);
 		});
 
 		it('should also return a digest hash if payload is passed in', async () => {
 			const endpoint = `${nconf.get('url')}/uid/${uid}/inbox`;
 			const payload = { foo: 'bar' };
 			const keyData = await activitypub.getPrivateKey('uid', uid);
+			const { digest } = await activitypub.sign(keyData, endpoint, payload);
 			const hash = createHash('sha256');
 			hash.update(JSON.stringify(payload));
-			const checksum = `SHA-256=${hash.digest('base64')}`;
-			const { digest } = await activitypub.sign(keyData, endpoint, checksum);
+			const checksum = hash.digest('base64');
 
 			assert(digest);
-			assert.strictEqual(digest, checksum);
+			assert.strictEqual(digest, `SHA-256=${checksum}`);
 		});
 
 		it('should create a key for NodeBB itself if a uid of 0 is passed in', async () => {
@@ -124,19 +124,14 @@ describe('http signature signing and verification', () => {
 		it('should return true when a digest is also passed in', async () => {
 			const endpoint = `${nconf.get('url')}/user/${username}/inbox`;
 			const path = `/user/${username}/inbox`;
-			const payload = { foo: 'bar' };
 			const keyData = await activitypub.getPrivateKey('uid', uid);
-			const hash = createHash('sha256');
-			hash.update(JSON.stringify(payload));
-			const checksum = `SHA-256=${hash.digest('base64')}`;
-			const signature = await activitypub.sign(keyData, endpoint, checksum);
+			const signature = await activitypub.sign(keyData, endpoint, { foo: 'bar' });
 			const { host } = nconf.get('url_parsed');
 			const req = {
 				...mockReqBase,
 				...{
 					method: 'POST',
 					path,
-					body: payload,
 					headers: { ...signature, host },
 				},
 			};

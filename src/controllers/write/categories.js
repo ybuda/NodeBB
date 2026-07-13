@@ -2,7 +2,6 @@
 
 const categories = require('../../categories');
 const meta = require('../../meta');
-const activitypub = require('../../activitypub');
 const api = require('../../api');
 
 const helpers = require('../helpers');
@@ -61,8 +60,7 @@ Categories.getTopics = async (req, res) => {
 
 Categories.setWatchState = async (req, res) => {
 	const { cid } = req.params;
-	const uid = req.params.member || req.body.uid;
-	let { state } = req.body;
+	let { uid, state } = req.body;
 
 	if (req.method === 'DELETE') {
 		// DELETE is always setting state to system default in acp
@@ -74,21 +72,22 @@ Categories.setWatchState = async (req, res) => {
 	}
 
 	const { cids: modified } = await api.categories.setWatchState(req, { cid, state, uid });
+
 	helpers.formatApiResponse(200, res, { modified });
 };
 
 Categories.getPrivileges = async (req, res) => {
-	helpers.formatApiResponse(200, res, await api.categories.getPrivileges(req, { cid: req.params.cid }));
+	const privilegeSet = await api.categories.getPrivileges(req, { cid: req.params.cid });
+	helpers.formatApiResponse(200, res, privilegeSet);
 };
 
 Categories.setPrivilege = async (req, res) => {
 	const { cid, privilege } = req.params;
-	const member = req.params.member || req.body.member;
 
 	await api.categories.setPrivilege(req, {
 		cid,
 		privilege,
-		member,
+		member: req.body.member,
 		set: req.method === 'PUT',
 	});
 
@@ -108,7 +107,6 @@ Categories.setModerator = async (req, res) => {
 };
 
 Categories.follow = async (req, res, next) => {
-	// Priv check done in route middleware
 	const { actor } = req.body;
 	const id = parseInt(req.params.cid, 10);
 
@@ -116,18 +114,28 @@ Categories.follow = async (req, res, next) => {
 		return next();
 	}
 
-	await activitypub.out.follow('cid', id, actor);
+	await api.activitypub.follow(req, {
+		type: 'cid',
+		id,
+		actor,
+	});
+
 	helpers.formatApiResponse(200, res, {});
 };
 
 Categories.unfollow = async (req, res, next) => {
+	const { actor } = req.body;
 	const id = parseInt(req.params.cid, 10);
-	const actor = req.params.actor || req.body.actor;
 
 	if (!id) { // disallow cid 0
 		return next();
 	}
 
-	await activitypub.out.undo.follow('cid', id, actor);
+	await api.activitypub.unfollow(req, {
+		type: 'cid',
+		id,
+		actor,
+	});
+
 	helpers.formatApiResponse(200, res, {});
 };

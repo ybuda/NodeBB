@@ -13,7 +13,8 @@ const user = require('../user');
 const topics = require('../topics');
 const pagination = require('../pagination');
 const privileges = require('../privileges');
-const tx = require('../translator');
+const translator = require('../translator');
+const utils = require('../utils');
 const helpers = require('./helpers');
 
 const searchController = module.exports;
@@ -26,15 +27,16 @@ searchController.search = async function (req, res, next) {
 
 	const searchOnly = parseInt(req.query.searchOnly, 10) === 1;
 
-	const [canSearchUsers, canSearchContent, canSearchTags] = await privileges.global.can([
-		'search:users', 'search:content', 'search:tags',
-	], req.uid);
-
-	const searchIn = req.query.in || meta.config.searchDefaultIn || 'titlesposts';
-	let allowed = (searchIn === 'users' && canSearchUsers) ||
-					(searchIn === 'tags' && canSearchTags) ||
-					(searchIn === 'categories') ||
-					(['titles', 'titlesposts', 'posts', 'bookmarks'].includes(searchIn) && canSearchContent);
+	const userPrivileges = await utils.promiseParallel({
+		'search:users': privileges.global.can('search:users', req.uid),
+		'search:content': privileges.global.can('search:content', req.uid),
+		'search:tags': privileges.global.can('search:tags', req.uid),
+	});
+	req.query.in = req.query.in || meta.config.searchDefaultIn || 'titlesposts';
+	let allowed = (req.query.in === 'users' && userPrivileges['search:users']) ||
+					(req.query.in === 'tags' && userPrivileges['search:tags']) ||
+					(req.query.in === 'categories') ||
+					(['titles', 'titlesposts', 'posts', 'bookmarks'].includes(req.query.in) && userPrivileges['search:content']);
 	({ allowed } = await plugins.hooks.fire('filter:search.isAllowed', {
 		uid: req.uid,
 		query: req.query,
@@ -51,31 +53,20 @@ searchController.search = async function (req, res, next) {
 		req.query.hasTags = [req.query.hasTags];
 	}
 
-	const validation = {
-		in: ['titles', 'titlesposts', 'posts', 'users', 'categories', 'tags', 'bookmarks'],
-		matchWords: ['all', 'any'],
-		repliesFilter: ['atmost', 'atleast'],
-		replies: 'number',
-		timeFilter: ['newer', 'older'],
-		timeRange: 'number',
-		sortBy: ['relevance', 'timestamp', 'votes', 'topic.lastposttime', 'topic.title', 'topic.postcount', 'topic.viewcount', 'topic.votes', 'topic.timestamp', 'user.username', 'category.name'],
-		sortDirection: ['asc', 'desc'],
-	};
-	const validParams = helpers.validateParameters(req.query, Object.keys(validation), validation);
 	const data = {
 		query: req.query.term,
-		searchIn: validParams.in || 'titlesposts',
-		matchWords: validParams.matchWords || 'all',
+		searchIn: req.query.in,
+		matchWords: req.query.matchWords || 'all',
 		postedBy: req.query.by,
 		categories: req.query.categories,
-		searchChildren: req.query.searchChildren === 'true',
+		searchChildren: req.query.searchChildren,
 		hasTags: req.query.hasTags,
-		replies: validParams.replies || '',
-		repliesFilter: validParams.repliesFilter || 'atleast',
-		timeRange: validParams.timeRange || '',
-		timeFilter: validParams.timeFilter || 'newer',
-		sortBy: validParams.sortBy || meta.config.searchDefaultSortBy || '',
-		sortDirection: validParams.sortDirection || 'desc',
+		replies: validator.escape(String(req.query.replies || '')),
+		repliesFilter: validator.escape(String(req.query.repliesFilter || '')),
+		timeRange: validator.escape(String(req.query.timeRange || '')),
+		timeFilter: validator.escape(String(req.query.timeFilter || '')),
+		sortBy: validator.escape(String(req.query.sortBy || '')) || meta.config.searchDefaultSortBy || '',
+		sortDirection: validator.escape(String(req.query.sortDirection || '')),
 		page: page,
 		itemsPerPage: req.query.itemsPerPage,
 		uid: req.uid,
@@ -96,6 +87,7 @@ searchController.search = async function (req, res, next) {
 		return res.json(searchData);
 	}
 
+
 	searchData.breadcrumbs = helpers.buildBreadcrumbs([{ text: '[[global:search]]' }]);
 	searchData.showAsPosts = !req.query.showAs || req.query.showAs === 'posts';
 	searchData.showAsTopics = req.query.showAs === 'topics';
@@ -109,20 +101,20 @@ searchController.search = async function (req, res, next) {
 
 	searchData.filters = {
 		replies: {
-			active: !!(data.repliesFilter && data.replies),
-			label: tx.compile(`search:replies-${data.repliesFilter || 'atleast'}-count`, data.replies),
+			active: !!data.repliesFilter,
+			label: `[[search:replies-${data.repliesFilter}-count, ${data.replies}]]`,
 		},
 		time: {
 			active: !!(data.timeFilter && data.timeRange),
-			label: `search:time-${data.timeFilter}-than-${data.timeRange}`,
+			label: `[[search:time-${data.timeFilter}-than-${data.timeRange}]]`,
 		},
 		sort: {
 			active: !!(data.sortBy && data.sortBy !== 'relevance'),
-			label: `search:sort-by-${data.sortBy}-${data.sortDirection}`,
+			label: `[[search:sort-by-${data.sortBy}-${data.sortDirection}]]`,
 		},
 		users: {
-			active: !!data.postedBy,
-			label: tx.compile(
+			active: !!(data.postedBy),
+			label: translator.compile(
 				'search:posted-by-usernames',
 				(Array.isArray(data.postedBy) ? data.postedBy : [])
 					.map(u => validator.escape(String(u))).join(', ')
@@ -130,7 +122,7 @@ searchController.search = async function (req, res, next) {
 		},
 		tags: {
 			active: !!(Array.isArray(data.hasTags) && data.hasTags.length),
-			label: tx.compile(
+			label: translator.compile(
 				'search:tags-x',
 				(Array.isArray(data.hasTags) ? data.hasTags : [])
 					.map(u => validator.escape(String(u))).join(', ')
@@ -147,11 +139,7 @@ searchController.search = async function (req, res, next) {
 	searchData.tagFilterSelected = getSelectedTags(data.hasTags);
 	searchData.searchDefaultSortBy = meta.config.searchDefaultSortBy || '';
 	searchData.searchDefaultIn = meta.config.searchDefaultIn || 'titlesposts';
-	searchData.privileges = {
-		'search:users': canSearchUsers,
-		'search:content': canSearchContent,
-		'search:tags': canSearchTags,
-	};
+	searchData.privileges = userPrivileges;
 
 	res.render('search', searchData);
 };
@@ -211,10 +199,10 @@ async function buildSelectedCategoryLabel(selectedCids) {
 			label = `[[search:categories-x, ${selectedCids.length}]]`;
 		} else if (selectedCids.length === 1 && selectedCids[0] === 'watched') {
 			label = `[[search:categories-watched-categories]]`;
-		} else if (selectedCids.length === 1 && selectedCids[0]) {
+		} else if (selectedCids.length === 1 && parseInt(selectedCids[0], 10)) {
 			const categoryData = await categories.getCategoryData(selectedCids[0]);
 			if (categoryData && categoryData.name) {
-				label = tx.compile('search:categories-x', categoryData.name);
+				label = `[[search:categories-x, ${categoryData.name}]]`;
 			}
 		}
 	}

@@ -35,7 +35,6 @@ Topics.thumbs = require('./thumbs');
 require('./bookmarks')(Topics);
 require('./merge')(Topics);
 Topics.events = require('./events');
-Topics.crossposts = require('./crossposts');
 
 Topics.exists = async function (tids) {
 	return await db.exists(
@@ -75,7 +74,8 @@ Topics.getTopicsByTids = async function (tids, options) {
 			.map(t => t && t.uid && t.uid.toString())
 			.filter(v => utils.isNumber(v) || activitypub.helpers.isUri(v)));
 		const cids = _.uniq(topics
-			.map(t => t && t.cid && t.cid.toString()));
+			.map(t => t && t.cid && t.cid.toString())
+			.filter(v => utils.isNumber(v)));
 		const guestTopics = topics.filter(t => t && t.uid === 0);
 
 		async function loadGuestHandles() {
@@ -101,7 +101,7 @@ Topics.getTopicsByTids = async function (tids, options) {
 			loadShowfullnameSettings(),
 			categories.getCategoriesFields(cids, ['cid', 'name', 'slug', 'icon', 'backgroundImage', 'imageClass', 'bgColor', 'color', 'disabled']),
 			loadGuestHandles(),
-			Topics.thumbs.load(topics, options),
+			Topics.thumbs.load(topics),
 		]);
 
 		users.forEach((userObj, idx) => {

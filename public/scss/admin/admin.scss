@@ -1,6 +1,3 @@
-@use "fontawesome/scss/variables" as fa-vars;
-@use 'fontawesome/scss/solid' as fa-solid;
-
 @import "fonts";
 @import "mixins";
 @import "common";
@@ -210,7 +207,7 @@ body {
 		background-color: $success;
 
 		i {
-			@include fa-solid.icon(fa-vars.$var-check);
+			@include fa-icon-solid($fa-var-check);
 		}
 	}
 }

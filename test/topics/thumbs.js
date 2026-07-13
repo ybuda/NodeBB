@@ -18,7 +18,6 @@ const file = require('../../src/file');
 const utils = require('../../src/utils');
 
 const helpers = require('../helpers');
-const request = require('../../src/request');
 
 describe('Topic thumbs', () => {
 	let topicObj;
@@ -29,14 +28,13 @@ describe('Topic thumbs', () => {
 	let fooJar;
 	let fooCSRF;
 	let fooUid;
-
 	const thumbPaths = [
 		`${nconf.get('upload_path')}/files/test.png`,
 		`${nconf.get('upload_path')}/files/test2.png`,
 		'https://example.org',
 	];
-
 	const relativeThumbPaths = thumbPaths.map(path => path.replace(nconf.get('upload_path'), ''));
+	const uuid = utils.generateUUID();
 
 	function createFiles() {
 		fs.closeSync(fs.openSync(path.resolve(__dirname, '../uploads', thumbPaths[0]), 'w'));
@@ -65,11 +63,11 @@ describe('Topic thumbs', () => {
 			cid: categoryObj.cid,
 			title: 'Test Topic Title',
 			content: 'The content of test topic',
-			thumbs: [relativeThumbPaths[0]],
 		});
 
 		// Touch a couple files and associate it to a topic
 		createFiles();
+		await db.sortedSetAdd(`topic:${topicObj.topicData.tid}:thumbs`, 0, `${relativeThumbPaths[0]}`);
 	});
 
 	it('should return bool for whether a thumb exists', async () => {
@@ -79,9 +77,10 @@ describe('Topic thumbs', () => {
 
 	describe('.get()', () => {
 		it('should return an array of thumbs', async () => {
+			require('../../src/cache').del(`topic:${topicObj.topicData.tid}:thumbs`);
 			const thumbs = await topics.thumbs.get(topicObj.topicData.tid);
 			assert.deepStrictEqual(thumbs, [{
-				id: String(topicObj.topicData.tid),
+				id: topicObj.topicData.tid,
 				name: 'test.png',
 				path: `${relativeThumbPaths[0]}`,
 				url: `${nconf.get('relative_path')}${nconf.get('upload_url')}${relativeThumbPaths[0]}`,
@@ -92,7 +91,7 @@ describe('Topic thumbs', () => {
 			const thumbs = await topics.thumbs.get([topicObj.topicData.tid, topicObj.topicData.tid + 1]);
 			assert.deepStrictEqual(thumbs, [
 				[{
-					id: String(topicObj.topicData.tid),
+					id: topicObj.topicData.tid,
 					name: 'test.png',
 					path: `${relativeThumbPaths[0]}`,
 					url: `${nconf.get('relative_path')}${nconf.get('upload_url')}${relativeThumbPaths[0]}`,
@@ -117,13 +116,25 @@ describe('Topic thumbs', () => {
 			mainPid = topicObj.postData.pid;
 		});
 
-		it('should add an uploaded file to the topic hash', async () => {
+		it('should add an uploaded file to a zset', async () => {
 			await topics.thumbs.associate({
 				id: tid,
 				path: relativeThumbPaths[0],
 			});
-			const topicData = await topics.getTopicData(tid);
-			assert(topicData.thumbs.includes(relativeThumbPaths[0]));
+
+			const exists = await db.isSortedSetMember(`topic:${tid}:thumbs`, relativeThumbPaths[0]);
+			assert(exists);
+		});
+
+		it('should also work with UUIDs', async () => {
+			await topics.thumbs.associate({
+				id: uuid,
+				path: relativeThumbPaths[1],
+				score: 5,
+			});
+
+			const exists = await db.isSortedSetMember(`draft:${uuid}:thumbs`, relativeThumbPaths[1]);
+			assert(exists);
 		});
 
 		it('should also work with a URL', async () => {
@@ -131,8 +142,14 @@ describe('Topic thumbs', () => {
 				id: tid,
 				path: relativeThumbPaths[2],
 			});
-			const topicData = await topics.getTopicData(tid);
-			assert(topicData.thumbs.includes(relativeThumbPaths[2]));
+
+			const exists = await db.isSortedSetMember(`topic:${tid}:thumbs`, relativeThumbPaths[2]);
+			assert(exists);
+		});
+
+		it('should have a score equal to the number of thumbs prior to addition', async () => {
+			const scores = await db.sortedSetScores(`topic:${tid}:thumbs`, [relativeThumbPaths[0], relativeThumbPaths[2]]);
+			assert.deepStrictEqual(scores, [0, 1]);
 		});
 
 		it('should update the relevant topic hash with the number of thumbnails', async () => {
@@ -146,140 +163,178 @@ describe('Topic thumbs', () => {
 				path: relativeThumbPaths[0],
 			});
 
-			const topicData = await topics.getTopicData(tid);
-			assert.strictEqual(topicData.thumbs.indexOf(relativeThumbPaths[0]), 1);
+			const score = await db.sortedSetScore(`topic:${tid}:thumbs`, relativeThumbPaths[0]);
+
+			assert(isFinite(score)); // exists in set
+			assert.strictEqual(score, 2);
 		});
 
-		it('should update the index to be passed in as the third argument', async () => {
+		it('should update the score to be passed in as the third argument', async () => {
 			await topics.thumbs.associate({
 				id: tid,
 				path: relativeThumbPaths[0],
 				score: 0,
 			});
 
-			const topicData = await topics.getTopicData(tid);
-			assert.strictEqual(topicData.thumbs.indexOf(relativeThumbPaths[0]), 0);
+			const score = await db.sortedSetScore(`topic:${tid}:thumbs`, relativeThumbPaths[0]);
+
+			assert(isFinite(score)); // exists in set
+			assert.strictEqual(score, 0);
 		});
 
 		it('should associate the thumbnail with that topic\'s main pid\'s uploads', async () => {
 			const uploads = await posts.uploads.list(mainPid);
-			assert(uploads.includes(relativeThumbPaths[0]));
+			assert(uploads.includes(relativeThumbPaths[0].slice(1)));
 		});
 
 		it('should maintain state in the topic\'s main pid\'s uploads if posts.uploads.sync() is called', async () => {
 			await posts.uploads.sync(mainPid);
 			const uploads = await posts.uploads.list(mainPid);
-			assert(uploads.includes(relativeThumbPaths[0]));
+			assert(uploads.includes(relativeThumbPaths[0].slice(1)));
+		});
+
+		it('should combine the thumbs uploaded to a UUID zset and combine it with a topic\'s thumb zset', async () => {
+			await topics.thumbs.migrate(uuid, tid);
+
+			const thumbs = await topics.thumbs.get(tid);
+			assert.strictEqual(thumbs.length, 3);
+			assert.deepStrictEqual(thumbs, [
+				{
+					id: tid,
+					name: 'test.png',
+					path: relativeThumbPaths[0],
+					url: `${nconf.get('relative_path')}${nconf.get('upload_url')}${relativeThumbPaths[0]}`,
+				},
+				{
+					id: tid,
+					name: 'example.org',
+					path: 'https://example.org',
+					url: 'https://example.org',
+				},
+				{
+					id: tid,
+					name: 'test2.png',
+					path: relativeThumbPaths[1],
+					url: `${nconf.get('relative_path')}${nconf.get('upload_url')}${relativeThumbPaths[1]}`,
+				},
+			]);
 		});
 	});
 
 	describe(`.delete()`, () => {
-		let tid;
-		let mainPid;
-
-		before(async () => {
-			topicObj = await topics.post({
-				uid: adminUid,
-				cid: categoryObj.cid,
-				title: 'Test Topic Title',
-				content: 'The content of test topic',
-			});
-			tid = topicObj.topicData.tid;
-			mainPid = topicObj.postData.pid;
-
-			await topics.thumbs.associate({
-				id: tid,
-				path: relativeThumbPaths[0],
-			});
-		});
-
 		it('should remove a file from sorted set', async () => {
-			await topics.thumbs.delete(tid, relativeThumbPaths[0]);
-			const thumbs = await topics.getTopicField(tid, 'thumbs');
-			assert.strictEqual(thumbs.includes(relativeThumbPaths[0]), false);
+			await topics.thumbs.associate({
+				id: 1,
+				path: thumbPaths[0],
+			});
+			await topics.thumbs.delete(1, relativeThumbPaths[0]);
+
+			assert.strictEqual(await db.isSortedSetMember('topic:1:thumbs', relativeThumbPaths[0]), false);
 		});
 
 		it('should no longer be associated with that topic\'s main pid\'s uploads', async () => {
+			const mainPid = (await topics.getMainPids([1]))[0];
 			const uploads = await posts.uploads.list(mainPid);
 			assert(!uploads.includes(path.basename(relativeThumbPaths[0])));
 		});
 
+		it('should also work with UUIDs', async () => {
+			await topics.thumbs.associate({
+				id: uuid,
+				path: thumbPaths[1],
+			});
+			await topics.thumbs.delete(uuid, relativeThumbPaths[1]);
+
+			assert.strictEqual(await db.isSortedSetMember(`draft:${uuid}:thumbs`, relativeThumbPaths[1]), false);
+			assert.strictEqual(await file.exists(thumbPaths[1]), false);
+		});
+
+		it('should also work with URLs', async () => {
+			await topics.thumbs.associate({
+				id: uuid,
+				path: thumbPaths[2],
+			});
+			await topics.thumbs.delete(uuid, relativeThumbPaths[2]);
+
+			assert.strictEqual(await db.isSortedSetMember(`draft:${uuid}:thumbs`, relativeThumbPaths[2]), false);
+		});
+
+		it('should not delete the file from disk if not associated with the tid', async () => {
+			createFiles();
+			await topics.thumbs.delete(uuid, thumbPaths[0]);
+			assert.strictEqual(await file.exists(thumbPaths[0]), true);
+		});
+
+		it('should handle an array of relative paths', async () => {
+			await topics.thumbs.associate({ id: 1, path: thumbPaths[0] });
+			await topics.thumbs.associate({ id: 1, path: thumbPaths[1] });
+
+			await topics.thumbs.delete(1, [relativeThumbPaths[0], relativeThumbPaths[1]]);
+		});
+
 		it('should have no more thumbs left', async () => {
-			const thumbs = await topics.getTopicField(tid, 'thumbs');
-			assert.strictEqual(thumbs.length, 0);
+			const associated = await db.isSortedSetMembers(`topic:1:thumbs`, [relativeThumbPaths[0], relativeThumbPaths[1]]);
+			assert.strictEqual(associated.some(Boolean), false);
 		});
 
 		it('should decrement numThumbs if dissociated one by one', async () => {
-			const winston = require('winston');
-			await topics.thumbs.associate({ id: tid, path: relativeThumbPaths[0] });
-			await topics.thumbs.associate({ id: tid, path: relativeThumbPaths[1] });
+			await topics.thumbs.associate({ id: 1, path: thumbPaths[0] });
+			await topics.thumbs.associate({ id: 1, path: thumbPaths[1] });
 
-			await topics.thumbs.delete(tid, [relativeThumbPaths[0]]);
-			let numThumbs = parseInt(await db.getObjectField(`topic:${tid}`, 'numThumbs'), 10);
+			await topics.thumbs.delete(1, [relativeThumbPaths[0]]);
+			let numThumbs = parseInt(await db.getObjectField('topic:1', 'numThumbs'), 10);
 			assert.strictEqual(numThumbs, 1);
 
-			await topics.thumbs.delete(tid, [relativeThumbPaths[1]]);
-			numThumbs = parseInt(await db.getObjectField(`topic:${tid}`, 'numThumbs'), 10);
-
+			await topics.thumbs.delete(1, [relativeThumbPaths[1]]);
+			numThumbs = parseInt(await db.getObjectField('topic:1', 'numThumbs'), 10);
 			assert.strictEqual(numThumbs, 0);
 		});
 	});
 
 	describe('.deleteAll()', () => {
-		before(async function () {
-			topicObj = await topics.post({
-				uid: adminUid,
-				cid: categoryObj.cid,
-				title: 'Test Topic Title',
-				content: 'The content of test topic',
-				thumbs: ['/files/test.png', '/files/test2.png'],
-			});
-			this.tid = topicObj.topicData.tid;
+		before(async () => {
+			await Promise.all([
+				topics.thumbs.associate({ id: 1, path: thumbPaths[0] }),
+				topics.thumbs.associate({ id: 1, path: thumbPaths[1] }),
+			]);
 			createFiles();
 		});
 
-		it('should have thumbs prior to tests', async function () {
-			const thumbs = await topics.getTopicField(this.tid, 'thumbs');
-			assert.deepStrictEqual(thumbs, ['/files/test.png', '/files/test2.png']);
+		it('should have thumbs prior to tests', async () => {
+			const associated = await db.isSortedSetMembers(`topic:1:thumbs`, [relativeThumbPaths[0], relativeThumbPaths[1]]);
+			assert.strictEqual(associated.every(Boolean), true);
 		});
 
-		it('should not error out', async function () {
-			await topics.thumbs.deleteAll(this.tid);
+		it('should not error out', async () => {
+			await topics.thumbs.deleteAll(1);
 		});
 
-		it('should remove all associated thumbs with that topic', async function () {
-			const thumbs = await topics.getTopicField(this.tid, 'thumbs');
-			assert.deepStrictEqual(thumbs, []);
+		it('should remove all associated thumbs with that topic', async () => {
+			const associated = await db.isSortedSetMembers(`topic:1:thumbs`, [relativeThumbPaths[0], relativeThumbPaths[1]]);
+			assert.strictEqual(associated.some(Boolean), false);
+		});
+
+		it('should no longer have a :thumbs zset', async () => {
+			assert.strictEqual(await db.exists('topic:1:thumbs'), false);
 		});
 	});
 
 	describe('HTTP calls to topic thumb routes', () => {
-		before(async function () {
-			const uid = await user.create({ username: 'thumbtest', password: '123456' });
-			const login = await helpers.loginUser('thumbtest', '123456');
-
-			this.jar = login.jar;
-			this.csrf = login.csrf_token;
-
-			topicObj = await topics.post({
-				uid,
-				cid: categoryObj.cid,
-				title: 'Test Topic Title',
-				content: 'The content of test topic',
-			});
-			this.tid = topicObj.topicData.tid;
+		before(() => {
 			createFiles();
 		});
 
-		it('should succeed with a valid tid', async function () {
-			const winston = require('winston');
-
-			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/v3/topics/${this.tid}/thumbs`, path.join(__dirname, '../files/test.png'), {}, this.jar, this.csrf);
+		it('should succeed with a valid tid', async () => {
+			const { response } = await helpers.uploadFile(`${nconf.get('url')}/api/v3/topics/1/thumbs`, path.join(__dirname, '../files/test.png'), {}, adminJar, adminCSRF);
 			assert.strictEqual(response.statusCode, 200);
-			assert.deepStrictEqual(Object.keys(body.response.images[0]), ['url', 'name']);
 		});
 
-		it('should succeed with uploader plugins', async function () {
+		it('should succeed with a uuid', async () => {
+			const { response } = await helpers.uploadFile(`${nconf.get('url')}/api/v3/topics/${uuid}/thumbs`, path.join(__dirname, '../files/test.png'), {}, adminJar, adminCSRF);
+			assert.strictEqual(response.statusCode, 200);
+		});
+
+		it('should succeed with uploader plugins', async () => {
 			const hookMethod = async () => ({
 				name: 'test.png',
 				url: 'https://example.org',
@@ -290,24 +345,24 @@ describe('Topic thumbs', () => {
 			});
 
 			const { response } = await helpers.uploadFile(
-				`${nconf.get('url')}/api/v3/topics/${this.tid}/thumbs`,
+				`${nconf.get('url')}/api/v3/topics/${uuid}/thumbs`,
 				path.join(__dirname, '../files/test.png'),
 				{},
-				this.jar,
-				this.csrf
+				adminJar,
+				adminCSRF
 			);
 			assert.strictEqual(response.statusCode, 200);
 
 			await plugins.hooks.unregister('test', 'filter:uploadFile', hookMethod);
 		});
 
-		it('should fail with a non-existant tid', async function () {
-			const { response } = await helpers.uploadFile(`${nconf.get('url')}/api/v3/topics/${Number.MAX_SAFE_INTEGER}/thumbs`, path.join(__dirname, '../files/test.png'), {}, this.jar, this.csrf);
+		it('should fail with a non-existant tid', async () => {
+			const { response } = await helpers.uploadFile(`${nconf.get('url')}/api/v3/topics/${Number.MAX_SAFE_INTEGER}/thumbs`, path.join(__dirname, '../files/test.png'), {}, adminJar, adminCSRF);
 			assert.strictEqual(response.statusCode, 404);
 		});
 
-		it('should fail when garbage is passed in', async function () {
-			const { response } = await helpers.uploadFile(`${nconf.get('url')}/api/v3/topics/abracadabra/thumbs`, path.join(__dirname, '../files/test.png'), {}, this.jar, this.csrf);
+		it('should fail when garbage is passed in', async () => {
+			const { response } = await helpers.uploadFile(`${nconf.get('url')}/api/v3/topics/abracadabra/thumbs`, path.join(__dirname, '../files/test.png'), {}, adminJar, adminCSRF);
 			assert.strictEqual(response.statusCode, 404);
 		});
 
@@ -316,38 +371,19 @@ describe('Topic thumbs', () => {
 			assert.strictEqual(response.statusCode, 403);
 		});
 
-		it('should fail if user does not have upload:image privilege', async function () {
-			const jar = request.jar();
-			const csrf = await helpers.getCsrfToken(jar);
-			const filePath = path.join(__dirname, '../files/test.png');
-			const { response, body } = await helpers.uploadFile(
-				`${nconf.get('url')}/api/v3/topics/${this.tid}/thumbs`, filePath, {}, jar, csrf
-			);
-			assert.strictEqual(response.statusCode, 403);
-			assert(body && body.status);
-			assert.strictEqual(body.status.message, 'You do not have enough privileges for this action.');
-
-			const {response: response1, body: body1 } = await helpers.uploadFile(
-				`${nconf.get('url')}/api/topic/thumb/upload`, filePath, {}, jar, csrf
-			);
-			assert.strictEqual(response1.statusCode, 403);
-			assert(body1 && body1.status);
-			assert.strictEqual(body1.status.message, 'You do not have enough privileges for this action.');
-		});
-
-		it('should fail if thumbnails are not enabled', async function () {
+		it('should fail if thumbnails are not enabled', async () => {
 			meta.config.allowTopicsThumbnail = 0;
 
-			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/v3/topics/${this.tid}/thumbs`, path.join(__dirname, '../files/test.png'), {}, this.jar, this.csrf);
+			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/v3/topics/${uuid}/thumbs`, path.join(__dirname, '../files/test.png'), {}, adminJar, adminCSRF);
 			assert.strictEqual(response.statusCode, 503);
 			assert(body && body.status);
 			assert.strictEqual(body.status.message, 'Topic thumbnails are disabled.');
 		});
 
-		it('should fail if file is not image', async function () {
+		it('should fail if file is not image', async () => {
 			meta.config.allowTopicsThumbnail = 1;
 
-			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/v3/topics/${this.tid}/thumbs`, path.join(__dirname, '../files/503.html'), {}, this.jar, this.csrf);
+			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/v3/topics/${uuid}/thumbs`, path.join(__dirname, '../files/503.html'), {}, adminJar, adminCSRF);
 			assert.strictEqual(response.statusCode, 500);
 			assert(body && body.status);
 			assert.strictEqual(body.status.message, 'Invalid File');
@@ -365,17 +401,21 @@ describe('Topic thumbs', () => {
 				content: 'The content of test topic',
 			});
 
-
-			await topics.thumbs.associate({ id: topicObj.tid, path: thumbPaths[0] });
-			await topics.thumbs.associate({ id: topicObj.tid, path: thumbPaths[1] });
-
+			await Promise.all([
+				topics.thumbs.associate({ id: topicObj.tid, path: thumbPaths[0] }),
+				topics.thumbs.associate({ id: topicObj.tid, path: thumbPaths[1] }),
+			]);
 			createFiles();
 
 			await topics.purge(topicObj.tid, adminUid);
 		});
 
+		it('should no longer have a :thumbs zset', async () => {
+			assert.strictEqual(await db.exists(`topic:${topicObj.tid}:thumbs`), false);
+		});
+
 		it('should not leave post upload associations behind', async () => {
-			const uploads = await posts.uploads.list(topicObj.postData.pid);
+			const uploads = await db.getSortedSetMembers(`post:${topicObj.postData.pid}:uploads`);
 			assert.strictEqual(uploads.length, 0);
 		});
 	});

@@ -14,7 +14,6 @@ const adminController = {
 	groups: require('./admin/groups'),
 	digest: require('./admin/digest'),
 	appearance: require('./admin/appearance'),
-	federation: require('./admin/federation'),
 	extend: {
 		widgets: require('./admin/widgets'),
 		rewards: require('./admin/rewards'),
@@ -25,7 +24,6 @@ const adminController = {
 	errors: require('./admin/errors'),
 	database: require('./admin/database'),
 	cache: require('./admin/cache'),
-	jobs: require('./admin/jobs'),
 	plugins: require('./admin/plugins'),
 	settings: require('./admin/settings'),
 	logger: require('./admin/logger'),

@@ -16,7 +16,7 @@ const utils = require('../utils');
 const CSS = module.exports;
 
 CSS.supportedSkins = [
-	'brite', 'cerulean', 'cosmo', 'cyborg', 'darkly', 'flatly', 'journal', 'litera',
+	'cerulean', 'cosmo', 'cyborg', 'darkly', 'flatly', 'journal', 'litera',
 	'lumen', 'lux', 'materia', 'minty', 'morph', 'pulse', 'quartz', 'sandstone',
 	'simplex', 'sketchy', 'slate', 'solar', 'spacelab', 'superhero', 'united',
 	'vapor', 'yeti', 'zephyr',
@@ -53,20 +53,12 @@ function boostrapImport(themeData) {
 	// see https://getbootstrap.com/docs/5.0/customize/sass/#variable-defaults
 	// for an explanation of this order and https://bootswatch.com/help/
 	const { bootswatchSkin, bsVariables, isCustomSkin } = themeData;
-	const skinOverrides = ['quartz'];
 	function bsvariables() {
 		if (bootswatchSkin) {
 			if (isCustomSkin) {
-				return `
-					${bsVariables}
-					${themeData._variables || ''}
-				`;
+				return themeData._variables || '';
 			}
-			return `
-				${bsVariables}
-				${skinOverrides.includes(bootswatchSkin) ? `@import "skins/${bootswatchSkin}";` : ''}
-				@import "bootswatch/dist/${bootswatchSkin}/variables";
-			`;
+			return `@import "bootswatch/dist/${bootswatchSkin}/variables";`;
 		}
 		return bsVariables;
 	}
@@ -150,28 +142,12 @@ function getFontawesomeStyle() {
 
 async function copyFontAwesomeFiles() {
 	await mkdirp(path.join(__dirname, '../../build/public/fontawesome/webfonts'));
-	await mkdirp(path.join(__dirname, '../../build/public/fontawesome/scss'));
-
 	const fonts = await fs.promises.opendir(path.join(utils.getFontawesomePath(), '/webfonts'));
 	const copyOperations = [];
 	for await (const file of fonts) {
 		if (file.isFile() && file.name.match(/\.(woff2|ttf|eot)?$/)) { // there shouldn't be any legacy eot files, but just in case we'll allow it
 			copyOperations.push(
-				fs.promises.copyFile(
-					path.join(fonts.path, file.name),
-					path.join(__dirname, '../../build/public/fontawesome/webfonts/', file.name)
-				)
-			);
-		}
-	}
-	const scssFiles = await fs.promises.opendir(path.join(utils.getFontawesomePath(), '/scss'));
-	for await (const file of scssFiles) {
-		if (file.isFile()) {
-			copyOperations.push(
-				fs.promises.copyFile(
-					path.join(scssFiles.path, file.name),
-					path.join(__dirname, '../../build/public/fontawesome/scss/', file.name)
-				)
+				fs.promises.copyFile(path.join(fonts.path, file.name), path.join(__dirname, '../../build/public/fontawesome/webfonts/', file.name))
 			);
 		}
 	}
@@ -225,7 +201,8 @@ async function getBundleMetadata(target) {
 	const paths = [
 		path.join(__dirname, '../../node_modules'),
 		path.join(__dirname, '../../public/scss'),
-		path.join(__dirname, '../../build/public'),
+		path.join(__dirname, '../../public/fontawesome/scss'),
+		path.join(utils.getFontawesomePath(), 'scss'),
 	];
 
 	// Skin support
@@ -293,7 +270,7 @@ CSS.getSkinSwitcherOptions = async function (uid) {
 		{ name: '[[user:no-skin]]', value: 'noskin', selected: userSettings.bootswatchSkin === 'noskin' },
 	];
 	const lightSkins = [
-		'brite', 'cerulean', 'cosmo', 'flatly', 'journal', 'litera',
+		'cerulean', 'cosmo', 'flatly', 'journal', 'litera',
 		'lumen', 'lux', 'materia', 'minty', 'morph', 'pulse', 'sandstone',
 		'simplex', 'sketchy', 'spacelab', 'united', 'yeti', 'zephyr',
 	];
@@ -359,16 +336,14 @@ CSS.buildBundle = async function (target, fork) {
 		await Promise.all(files.map(f => fs.promises.unlink(path.join(__dirname, '../../build/public', f))));
 	}
 
-	const [data] = await Promise.all([
-		getBundleMetadata(target),
-		copyFontAwesomeFiles(),
-	]);
+	const data = await getBundleMetadata(target);
 	const minify = process.env.NODE_ENV !== 'development';
 	const { ltr, rtl } = await minifier.css.bundle(data.imports, data.paths, minify, fork);
 
 	await Promise.all([
 		fs.promises.writeFile(path.join(__dirname, '../../build/public', `${target}.css`), ltr.code),
 		fs.promises.writeFile(path.join(__dirname, '../../build/public', `${target}-rtl.css`), rtl.code),
+		copyFontAwesomeFiles(),
 	]);
 	return [ltr.code, rtl.code];
 };

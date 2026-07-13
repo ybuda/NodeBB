@@ -8,7 +8,7 @@ const db = require('../database');
 const notifications = require('../notifications');
 const user = require('../user');
 const io = require('../socket.io');
-const activitypub = require('../activitypub');
+const api = require('../api');
 const plugins = require('../plugins');
 const utils = require('../utils');
 
@@ -80,14 +80,13 @@ module.exports = function (Messaging) {
 		}
 
 		try {
-			await sendNotification(fromUid, roomId, messageObj);
-			if (!isPublic && utils.isNumber(fromUid)) {
-				setImmediate(() => {
-					activitypub.out.create.privateNote(messageObj);
-				});
-			}
+			await Promise.all([
+				sendNotification(fromUid, roomId, messageObj),
+				!isPublic && utils.isNumber(fromUid) ?
+					api.activitypub.create.privateNote({ uid: fromUid }, { messageObj }) : null,
+			]);
 		} catch (err) {
-			winston.error(`[messaging/notifications] Unable to send notification\n${err.stack}`);
+			winston.error(`[messaging/notifications] Unabled to send notification\n${err.stack}`);
 		}
 	};
 

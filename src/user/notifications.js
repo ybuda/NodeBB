@@ -16,8 +16,6 @@ const user = require('./index');
 const UserNotifications = module.exports;
 
 UserNotifications.get = async function (uid) {
-	const { hideReadNotifications } = await user.getSettings(uid);
-
 	if (parseInt(uid, 10) <= 0) {
 		return { read: [], unread: [] };
 	}
@@ -25,7 +23,7 @@ UserNotifications.get = async function (uid) {
 	let unread = await getNotificationsFromSet(`uid:${uid}:notifications:unread`, uid, 0, 49);
 	unread = unread.filter(Boolean);
 	let read = [];
-	if (!hideReadNotifications && unread.length < 50) {
+	if (unread.length < 50) {
 		read = await getNotificationsFromSet(`uid:${uid}:notifications:read`, uid, 0, 49 - unread.length);
 	}
 
@@ -98,23 +96,14 @@ async function getNotificationsFromSet(set, uid, start, stop) {
 	return await UserNotifications.getNotifications(nids, uid);
 }
 
-UserNotifications.ownsNids = async function (nids, uid) {
-	const [isInRead, isInUnread] = await Promise.all([
-		db.isSortedSetMembers(`uid:${uid}:notifications:read`, nids),
-		db.isSortedSetMembers(`uid:${uid}:notifications:unread`, nids),
-	]);
-	return nids.map((nid, index) => (isInRead[index] || isInUnread[index]));
-};
-
 UserNotifications.getNotifications = async function (nids, uid) {
 	if (!Array.isArray(nids) || !nids.length) {
 		return [];
 	}
 
-	const [notifObjs, isRead, isUnread, userSettings] = await Promise.all([
+	const [notifObjs, hasRead, userSettings] = await Promise.all([
 		notifications.getMultiple(nids),
 		db.isSortedSetMembers(`uid:${uid}:notifications:read`, nids),
-		db.isSortedSetMembers(`uid:${uid}:notifications:unread`, nids),
 		user.getSettings(uid),
 	]);
 
@@ -124,11 +113,11 @@ UserNotifications.getNotifications = async function (nids, uid) {
 			deletedNids.push(nids[index]);
 		}
 		if (notification) {
-			notification.read = isRead[index];
+			notification.read = hasRead[index];
 			notification.readClass = !notification.read ? 'unread' : '';
 		}
-		const isUsersNotification = isRead[index] || isUnread[index];
-		return notification && isUsersNotification;
+
+		return notification;
 	});
 
 	await deleteUserNids(deletedNids, uid);

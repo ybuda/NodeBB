@@ -1,6 +1,7 @@
 'use strict';
 
 const nconf = require('nconf');
+const url = require('url');
 const winston = require('winston');
 const sanitize = require('sanitize-html');
 const _ = require('lodash');
@@ -10,7 +11,6 @@ const plugins = require('../plugins');
 const translator = require('../translator');
 const utils = require('../utils');
 const postCache = require('./cache');
-const devMode = process.env.NODE_ENV === 'development';
 
 let sanitizeConfig = {
 	allowedTags: sanitize.defaults.allowedTags.concat([
@@ -58,9 +58,6 @@ module.exports = function (Posts) {
 			return postData;
 		}
 
-		if (!type.startsWith('activitypub.')) {
-			postData.content = postData.content.replace(meta.config.activitypubBreakString, '');
-		}
 		({ postData } = await plugins.hooks.fire('filter:parse.post', { postData, type }));
 		postData.content = translator.escape(postData.content);
 		if (postData.pid) {
@@ -77,9 +74,7 @@ module.exports = function (Posts) {
 
 	Posts.parseSignature = async function (userData, uid) {
 		userData.signature = sanitizeSignature(userData.signature || '');
-		const result = await plugins.hooks.fire('filter:parse.signature', { userData: userData, uid: uid });
-		userData.signature = translator.escape(result.userData.signature);
-		return result;
+		return await plugins.hooks.fire('filter:parse.signature', { userData: userData, uid: uid });
 	};
 
 	Posts.relativeToAbsolute = function (content, regex) {
@@ -93,18 +88,23 @@ module.exports = function (Posts) {
 		while (current !== null) {
 			if (current[1]) {
 				try {
-					parsed = new URL(current[1], nconf.get('url'));
-					absolute = parsed.toString();
-					if (absolute !== current[1]) {
+					parsed = url.parse(current[1]);
+					if (!parsed.protocol) {
+						if (current[1].startsWith('/')) {
+							// Internal link
+							absolute = nconf.get('base_url') + current[1];
+						} else {
+							// External link
+							absolute = `//${current[1]}`;
+						}
+
 						const offset = current[0].indexOf(current[1]);
 						content = content.slice(0, current.index + offset) +
 						absolute +
 						content.slice(current.index + offset + current[1].length);
 					}
 				} catch (err) {
-					if (devMode) {
-						winston.verbose(err.messsage);
-					}
+					winston.verbose(err.messsage);
 				}
 			}
 			current = regex.exec(content);

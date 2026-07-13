@@ -1,17 +1,13 @@
 'use strict';
 
-const path = require('path');
 const nconf = require('nconf');
 const validator = require('validator');
-const mime = require('mime').default;
 
 const meta = require('../meta');
 const user = require('../user');
 const plugins = require('../plugins');
-const image = require('../image');
 const privilegesHelpers = require('../privileges/helpers');
 const helpers = require('./helpers');
-const translator = require('../translator');
 
 const Controllers = module.exports;
 
@@ -44,7 +40,6 @@ Controllers['service-worker'] = require('./service-worker');
 Controllers['404'] = require('./404');
 Controllers.errors = require('./errors');
 Controllers.composer = require('./composer');
-Controllers.intents = require('./intents');
 
 Controllers.write = require('./write');
 
@@ -121,7 +116,6 @@ Controllers.login = async function (req, res) {
 	req.session.returnTo = req.session.returnTo && req.session.returnTo.replace(nconf.get('base_url'), '').replace(nconf.get('relative_path'), '');
 
 	data.alternate_logins = loginStrategies.length > 0;
-	data.osw_logins = !!meta.config.activitypubEnabled;
 	data.authentication = loginStrategies;
 	data.allowRegistration = registrationType === 'normal';
 	data.allowLoginWith = `[[login:${allowLoginWith}]]`;
@@ -180,7 +174,6 @@ Controllers.register = async function (req, res, next) {
 		res.render('register', {
 			'register_window:spansize': loginStrategies.length ? 'col-md-6' : 'col-md-12',
 			alternate_logins: !!loginStrategies.length,
-			osw_logins: !!meta.config.activitypubEnabled,
 			authentication: loginStrategies,
 
 			minimumUsernameLength: meta.config.minimumUsernameLength,
@@ -199,7 +192,6 @@ Controllers.register = async function (req, res, next) {
 	}
 };
 
-// GET /register/complete
 Controllers.registerInterstitial = async function (req, res, next) {
 	if (!req.session.hasOwnProperty('registration')) {
 		return res.redirect(`${nconf.get('relative_path')}/register`);
@@ -243,6 +235,12 @@ Controllers.confirmEmail = async (req, res) => {
 		return renderPage();
 	}
 	try {
+		if (req.loggedIn) {
+			const emailValidated = await user.getUserField(req.uid, 'email:confirmed');
+			if (emailValidated) {
+				return renderPage({ alreadyValidated: true });
+			}
+		}
 		await user.email.confirmByCode(req.params.code, req.session.id);
 		if (req.session.registration) {
 			// After confirmation, no need to send user back to email change form
@@ -278,7 +276,6 @@ Controllers.manifest = async function (req, res) {
 	const manifest = {
 		name: meta.config.title || 'NodeBB',
 		short_name: meta.config['title:short'] || meta.config.title || 'NodeBB',
-		...(meta.config.description && { description: meta.config.description }),
 		start_url: nconf.get('url'),
 		display: 'standalone',
 		orientation: 'portrait',
@@ -286,33 +283,6 @@ Controllers.manifest = async function (req, res) {
 		background_color: meta.config.backgroundColor || '#ffffff',
 		icons: [],
 	};
-
-	if (meta.config['brand:screenshot']) {
-		let sizes;
-		try {
-			const { width, height } = await image.size(path.join(nconf.get('base_dir'), meta.config['brand:screenshot'].replace('assets', 'public')));
-			sizes = `${width}x${height}`;
-		} catch (e) {
-			// noop
-		}
-		manifest.screenshots = [
-			{
-				src: `${nconf.get('relative_path')}${meta.config['brand:screenshot']}`,
-				...(sizes && { sizes }),
-				type: mime.getType(meta.config['brand:screenshot']),
-			},
-		];
-	} else {
-		manifest.screenshots = [
-			{
-				src: `${nconf.get('relative_path')}/assets/images/screenshot-default.png`,
-				sizes: '446x778',
-				type: 'image/png',
-				form_factor: 'narrow',
-				label: 'Default home page of a vanilla NodeBB installation.',
-			},
-		];
-	}
 
 	if (meta.config['brand:touchIcon']) {
 		manifest.icons.push({
@@ -351,43 +321,6 @@ Controllers.manifest = async function (req, res) {
 			type: 'image/png',
 			density: 10.0,
 		});
-	} else {
-		manifest.icons.push({
-			src: `${nconf.get('relative_path')}/assets/images/touch/36.png`,
-			sizes: '36x36',
-			type: 'image/png',
-			density: 0.75,
-		}, {
-			src: `${nconf.get('relative_path')}/assets/images/touch/48.png`,
-			sizes: '48x48',
-			type: 'image/png',
-			density: 1.0,
-		}, {
-			src: `${nconf.get('relative_path')}/assets/images/touch/72.png`,
-			sizes: '72x72',
-			type: 'image/png',
-			density: 1.5,
-		}, {
-			src: `${nconf.get('relative_path')}/assets/images/touch/96.png`,
-			sizes: '96x96',
-			type: 'image/png',
-			density: 2.0,
-		}, {
-			src: `${nconf.get('relative_path')}/assets/images/touch/144.png`,
-			sizes: '144x144',
-			type: 'image/png',
-			density: 3.0,
-		}, {
-			src: `${nconf.get('relative_path')}/assets/images/touch/192.png`,
-			sizes: '192x192',
-			type: 'image/png',
-			density: 4.0,
-		}, {
-			src: `${nconf.get('relative_path')}/assets/images/touch/512.png`,
-			sizes: '512x512',
-			type: 'image/png',
-			density: 10.0,
-		});
 	}
 
 
@@ -417,26 +350,18 @@ Controllers.manifest = async function (req, res) {
 
 Controllers.outgoing = function (req, res, next) {
 	const url = req.query.url || '';
-	let parsed;
-	try {
-		parsed = new URL(url);
-	} catch (err) {
-		return next();
-	}
-
 	const allowedProtocols = [
 		'http', 'https', 'ftp', 'ftps', 'mailto', 'news', 'irc', 'gopher',
 		'nntp', 'feed', 'telnet', 'mms', 'rtsp', 'svn', 'tel', 'fax', 'xmpp', 'webcal',
 	];
+	const parsed = require('url').parse(url);
 
 	if (!url || !parsed.protocol || !allowedProtocols.includes(parsed.protocol.slice(0, -1))) {
 		return next();
 	}
-	const escapedSearch = validator.escape(translator.escape(parsed.search || ''));
-	const escapedUrl = parsed.search ? parsed.href.replace(parsed.search, escapedSearch) : parsed.href;
 
 	res.render('outgoing', {
-		outgoing: escapedUrl,
+		outgoing: validator.escape(String(url)),
 		title: meta.config.title,
 		breadcrumbs: helpers.buildBreadcrumbs([{
 			text: '[[notifications:outgoing-link]]',

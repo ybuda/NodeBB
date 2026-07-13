@@ -11,8 +11,6 @@ get:
           schema:
             type: object
             properties:
-              url:
-                type: string
               relative_path:
                 type: string
               upload_url:
@@ -89,8 +87,6 @@ get:
                 type: number
               maximumFileSize:
                 type: number
-              convertPastedImageTo:
-                type: string
               theme:id:
                 type: string
               theme:src:
@@ -152,8 +148,6 @@ get:
                     type: number
               acpLang:
                 type: string
-              hideReadNotifications:
-                type: boolean
               openOutgoingLinksInNewTab:
                 type: boolean
               topicSearchEnabled:
@@ -189,12 +183,3 @@ get:
                 properties:
                   probe:
                     type: number
-                  worldDefaultCid:
-                    type: number
-              tinycon:
-                type: object
-                properties:
-                  color:
-                    type: string
-                  background:
-                    type: string

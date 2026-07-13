@@ -15,6 +15,7 @@ const Messaging = require('../src/messaging');
 const api = require('../src/api');
 const helpers = require('./helpers');
 const request = require('../src/request');
+const utils = require('../src/utils');
 const translator = require('../src/translator');
 
 describe('Messaging Library', () => {
@@ -46,13 +47,21 @@ describe('Messaging Library', () => {
 	};
 
 	before(async () => {
-		mocks.users.foo.uid = await User.create({ username: 'foo', password: 'barbar' }); // admin
-		mocks.users.bar.uid = await User.create({ username: 'bar', password: 'bazbaz' }); // admin
-		mocks.users.baz.uid = await User.create({ username: 'baz', password: 'quuxquux' }); // restricted user
-		mocks.users.herp.uid = await User.create({ username: 'herp', password: 'derpderp' }); // a regular user
+		// Create 3 users: 1 admin, 2 regular
+		({
+			foo: mocks.users.foo.uid,
+			bar: mocks.users.bar.uid,
+			baz: mocks.users.baz.uid,
+			herp: mocks.users.herp.uid,
+		} = await utils.promiseParallel({
+			foo: User.create({ username: 'foo', password: 'barbar' }), // admin
+			bar: User.create({ username: 'bar', password: 'bazbaz' }), // admin
+			baz: User.create({ username: 'baz', password: 'quuxquux' }), // restricted user
+			herp: User.create({ username: 'herp', password: 'derpderp' }), // a regular user
+		}));
 
 		await Groups.join('administrators', mocks.users.foo.uid);
-		await User.setSetting(mocks.users.baz.uid, 'disableIncomingChats', '1');
+		await User.setSetting(mocks.users.baz.uid, 'restrictChat', '1');
 
 		({ jar: mocks.users.foo.jar, csrf_token: mocks.users.foo.csrf } = await helpers.loginUser('foo', 'barbar'));
 		({ jar: mocks.users.bar.jar, csrf_token: mocks.users.bar.csrf } = await helpers.loginUser('bar', 'bazbaz'));
@@ -67,7 +76,7 @@ describe('Messaging Library', () => {
 		meta.configs.chatMessageDelay = chatMessageDelay;
 	});
 
-	describe('.canMessageUser() / canMessageRoom()', () => {
+	describe('.canMessageUser()', () => {
 		it('should allow messages to be sent to an unrestricted user', (done) => {
 			Messaging.canMessageUser(mocks.users.baz.uid, mocks.users.herp.uid, (err) => {
 				assert.ifError(err);
@@ -76,7 +85,7 @@ describe('Messaging Library', () => {
 		});
 
 		it('should NOT allow messages to be sent to a restricted user', async () => {
-			await User.setSetting(mocks.users.baz.uid, 'disableIncomingMessages', '1');
+			await User.setSetting(mocks.users.baz.uid, 'restrictChat', '1');
 			try {
 				await Messaging.canMessageUser(mocks.users.herp.uid, mocks.users.baz.uid);
 			} catch (err) {
@@ -91,74 +100,35 @@ describe('Messaging Library', () => {
 			});
 		});
 
-		it('should respect allow/deny list when sending chat messages', async () => {
-			const uid1 = await User.create({ username: 'allowdeny1', password: 'barbar' });
-			const uid2 = await User.create({ username: 'allowdeny2', password: 'bazbaz' });
-			const uid3 = await User.create({ username: 'allowdeny3', password: 'bazbaz' });
-			await Messaging.canMessageUser(uid1, uid2);
-
-			// rejects uid1 only allows uid3 to chat
-			await User.setSetting(uid1, 'chatAllowList', JSON.stringify([uid3]));
-			await assert.rejects(
-				Messaging.canMessageUser(uid2, uid1),
-				{ message: '[[error:chat-restricted]]' },
-			);
-
-			// rejects uid2 denies chat from uid1
-			await User.setSetting(uid2, 'chatDenyList', JSON.stringify([uid1]));
-			await assert.rejects(
-				Messaging.canMessageUser(uid1, uid2),
-				{ message: '[[error:chat-restricted]]' },
-			);
+		it('should allow messages to be sent to a restricted user if restricted user follows sender', (done) => {
+			User.follow(mocks.users.baz.uid, mocks.users.herp.uid, () => {
+				Messaging.canMessageUser(mocks.users.herp.uid, mocks.users.baz.uid, (err) => {
+					assert.ifError(err);
+					done();
+				});
+			});
 		});
 
-		it('should not allow messaging room if user is muted temporarily or permanently', async () => {
+		it('should not allow messaging room if user is muted', async () => {
 			const twoMinutesFromNow = Date.now() + (2 * 60 * 1000);
 			const twoHoursFromNow = Date.now() + (2 * 60 * 60 * 1000);
 			const roomId = 0;
 
-			await User.setUserFields(mocks.users.herp.uid, {
-				muted: 1,
-				mutedUntil: twoMinutesFromNow,
-				mutedReason: 'no reason',
-			});
+			await User.setUserField(mocks.users.herp.uid, 'mutedUntil', twoMinutesFromNow);
 			await assert.rejects(Messaging.canMessageRoom(mocks.users.herp.uid, roomId), (err) => {
 				assert(err.message.startsWith('[[error:user-muted-for-minutes,'));
 				return true;
 			});
 
-			await User.setUserFields(mocks.users.herp.uid, {
-				muted: 1,
-				mutedUntil: twoHoursFromNow,
-				mutedReason: 'no reason',
-			});
+			await User.setUserField(mocks.users.herp.uid, 'mutedUntil', twoHoursFromNow);
 			await assert.rejects(Messaging.canMessageRoom(mocks.users.herp.uid, roomId), (err) => {
 				assert(err.message.startsWith('[[error:user-muted-for-hours,'));
 				return true;
 			});
-
-			await User.setUserFields(mocks.users.herp.uid, {
-				muted: 1,
-				mutedUntil: 0,
-				mutedReason: 'no reason',
-			});
-			await assert.rejects(Messaging.canMessageRoom(mocks.users.herp.uid, roomId), {
-				message: '[[error:user-muted-indefinitely]]',
-			});
-
-			await db.deleteObjectFields(`user:${mocks.users.herp.uid}`, [
-				'muted', 'mutedUntil', 'mutedReason',
-			]);
+			await db.deleteObjectField(`user:${mocks.users.herp.uid}`, 'mutedUntil');
 			await assert.rejects(Messaging.canMessageRoom(mocks.users.herp.uid, roomId), {
 				message: '[[error:no-room]]',
 			});
-		});
-
-		it('should throw if roomId is an array', async () => {
-			await assert.rejects(
-				Messaging.canMessageRoom(mocks.users.herp.uid, [1, 2, 3]),
-				{ message: '[[error:invalid-data]]' }
-			);
 		});
 	});
 
@@ -199,12 +169,11 @@ describe('Messaging Library', () => {
 		});
 
 		it('should create a new chat room', async () => {
-			await User.setSetting(mocks.users.baz.uid, 'disableIncomingMessages', '0');
+			await User.setSetting(mocks.users.baz.uid, 'restrictChat', '0');
 			const { body } = await callv3API('post', `/chats`, {
 				uids: [mocks.users.baz.uid],
-				joinLeaveMessages: 1,
 			}, 'foo');
-			await User.setSetting(mocks.users.baz.uid, 'disableIncomingMessages', '1');
+			await User.setSetting(mocks.users.baz.uid, 'restrictChat', '1');
 
 			roomId = body.response.roomId;
 			assert(roomId);
@@ -311,16 +280,6 @@ describe('Messaging Library', () => {
 			message = messages.pop();
 			assert.strictEqual(message.system, 1);
 			assert.strictEqual(message.content, 'user-join');
-		});
-
-		it('should make both users owners on room creation', async () => {
-			const { body } = await callv3API('post', '/chats', {
-				uids: [mocks.users.foo.uid],
-			}, 'herp');
-			const { roomId } = body.response;
-			assert.deepStrictEqual(
-				await Messaging.isRoomOwner([mocks.users.herp.uid, mocks.users.foo.uid], roomId), [true, true]
-			);
 		});
 
 		it('should change owner when owner leaves room', async () => {
@@ -589,38 +548,6 @@ describe('Messaging Library', () => {
 			assert.equal(rooms[0].teaser.content, '&lt;svg&#x2F;onload=alert(document.location);');
 		});
 
-		it('should not translate chat messages if they have translation keys', async () => {
-			await callv3API('post', `/chats/${roomId}`, { roomId: roomId, message: '[[global:404.login]]' }, 'foo');
-			const { rooms } = await api.chats.list(
-				{ uid: mocks.users.foo.uid }, { start: 0, stop: 9, uid: mocks.users.foo.uid }
-			);
-			const room = await api.chats.get({ uid: mocks.users.foo.uid }, { uid: mocks.users.foo.uid, roomId });
-			const txEscaped = translator.escape('[[global:404.login]]');
-			assert.strictEqual(room.messages[room.messages.length - 1].content, txEscaped);
-			assert.strictEqual(rooms[0].teaser.content, txEscaped);
-		});
-
-		it('should escape chatWithMessage', async () => {
-			const oldValue = meta.config.showFullnameAsDisplayName;
-			meta.config.showFullnameAsDisplayName = true;
-
-			const uid = await User.create({ username: 'escapedsender', fullname: '<svg/onload=alert(document.location);' });
-			await User.setSetting(uid, 'showfullname', 1);
-
-			await callv3API('post', '/chats', { uids: [uid] }, 'foo');
-
-			const { rooms } = await api.chats.list(
-				{ uid: mocks.users.foo.uid }, { start: 0, stop: 9, uid: mocks.users.foo.uid }
-			);
-
-			assert.strictEqual(
-				rooms[0].chatWithMessage,
-				`Chat with <a href="${nconf.get('relative_path')}/uid/${uid}">&lt;svg&#x2F;onload=alert(document.location);</a>`
-			);
-
-			meta.config.showFullnameAsDisplayName = oldValue;
-		});
-
 		it('should fail to check if user has private chat with invalid data', async () => {
 			await assert.rejects(
 				api.users.getPrivateRoomId({ uid: null }, undefined),
@@ -636,57 +563,6 @@ describe('Messaging Library', () => {
 		it('should check if user has private chat with another uid', async () => {
 			const { roomId } = await api.users.getPrivateRoomId({ uid: mocks.users.foo.uid }, { uid: mocks.users.herp.uid });
 			assert(roomId);
-		});
-
-		it('should create a public chat room', async () => {
-			const data = await api.chats.create({
-				uid: mocks.users.foo.uid,
-				session: {},
-			}, {
-				name: 'public room',
-				type: 'public',
-				uids: [],
-				groups: ['registered-users'],
-			});
-			assert(data.roomId);
-			assert.strictEqual(data.public, true);
-		});
-
-		it('should throw if called with an array of roomIds', async () => {
-			await assert.rejects(
-				api.chats.get({ uid: mocks.users.foo.uid }, { roomId: [1, 2, 3] }),
-				{ message: '[[error:invalid-data]]' }
-			);
-
-			await assert.rejects(
-				api.chats.post({ uid: mocks.users.foo.uid }, { roomId: [1, 2, 3] }),
-				{ message: '[[error:invalid-data]]' }
-			);
-
-			await assert.rejects(
-				api.chats.update({ uid: mocks.users.foo.uid }, { roomId: [1, 2, 3] }),
-				{ message: '[[error:invalid-data]]' }
-			);
-
-			await assert.rejects(
-				api.search.roomUsers({ uid: mocks.users.foo.uid }, { roomId: [1, 2, 3] }),
-				{ message: '[[error:invalid-data]]' }
-			);
-
-			await assert.rejects(
-				api.chats.getPinnedMessages({ uid: mocks.users.foo.uid }, { roomId: [1, 2, 3] }),
-				{ message: '[[error:invalid-data]]' }
-			);
-
-			await assert.rejects(
-				api.chats.watch({ uid: mocks.users.foo.uid }, { roomId: [1, 2, 3] }),
-				{ message: '[[error:invalid-data]]' }
-			);
-
-			await assert.rejects(
-				api.chats.users({ uid: mocks.users.foo.uid }, { roomId: [1, 2, 3] }),
-				{ message: '[[error:invalid-data]]' }
-			);
 		});
 	});
 

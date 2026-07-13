@@ -5,9 +5,8 @@ const process = require('process');
 const nconf = require('nconf');
 const winston = require('winston');
 const validator = require('validator');
+// const cheerio = require('cheerio');
 const crypto = require('crypto');
-const tokenizer = require('sbd');
-const pretty = require('pretty');
 
 const meta = require('../meta');
 const posts = require('../posts');
@@ -17,11 +16,11 @@ const request = require('../request');
 const db = require('../database');
 const ttl = require('../cache/ttl');
 const user = require('../user');
+const utils = require('../utils');
 const activitypub = require('.');
 
 const webfingerRegex = /^(@|acct:)?[\w-.]+@.+$/;
 const webfingerCache = ttl({
-	name: 'ap-webfinger-cache',
 	max: 5000,
 	ttl: 1000 * 60 * 60 * 24, // 24 hours
 });
@@ -29,16 +28,10 @@ const sha256 = payload => crypto.createHash('sha256').update(payload).digest('he
 
 const Helpers = module.exports;
 
-Helpers._webfingerCache = webfingerCache; // exported for tests
-
 Helpers._test = (method, args) => {
 	// because I am lazy and I probably wrote some variant of this below code 1000 times already
 	setTimeout(async () => {
-		try {
-			console.log(await method.apply(method, args));
-		} catch (e) {
-			console.log('Exception thrown', e);
-		}
+		console.log(await method.apply(method, args));
 	}, 2500);
 };
 // process.nextTick(() => {
@@ -49,6 +42,7 @@ Helpers.log = (message) => {
 	if (!message) {
 		return _lastLog;
 	}
+
 	_lastLog = message;
 	if (process.env.NODE_ENV === 'development') {
 		winston.verbose(message);
@@ -69,18 +63,10 @@ Helpers.isUri = (value) => {
 	});
 };
 
-Helpers.assertAccept = (accept) => {
-	if (!accept) {
-		return false;
-	}
-
-	const normalized = accept
-		.split(',')
-		.map(s => s.trim().replace(/\s*;\s*/g, ';')) // spec allows spaces around semi-colon
-		.join(',');
-
-	return activitypub._constants.acceptableTypes.some(type => normalized.includes(type));
-};
+Helpers.assertAccept = accept => (accept && accept.split(',').some((value) => {
+	const parts = value.split(';').map(v => v.trim());
+	return activitypub._constants.acceptableTypes.includes(value || parts[0]);
+}));
 
 Helpers.isWebfinger = (value) => {
 	// N.B. returns normalized handle, so truthy check!
@@ -120,12 +106,7 @@ Helpers.query = async (id) => {
 	let response;
 	let body;
 	try {
-		({ response, body } = await request.get(`https://${hostname}/.well-known/webfinger?${query}`, {
-			headers: {
-				accept: 'application/jrd+json',
-			},
-			timeout: 5000,
-		}));
+		({ response, body } = await request.get(`https://${hostname}/.well-known/webfinger?${query}`));
 	} catch (e) {
 		return false;
 	}
@@ -141,12 +122,9 @@ Helpers.query = async (id) => {
 		({ href: actorUri } = actorUri);
 	}
 
-	let { subject, publicKey } = body;
-	// Fix missing scheme
-	if (!subject.startsWith('acct:') && !subject.startsWith('did:')) {
-		subject = `acct:${subject}`;
-	}
-	const payload = { subject, username, hostname, actorUri, publicKey, _raw: body };
+	const { subject, publicKey } = body;
+	const payload = { subject, username, hostname, actorUri, publicKey };
+
 	const claimedId = new URL(subject).pathname;
 	webfingerCache.set(claimedId, payload);
 	if (claimedId !== id) {
@@ -197,9 +175,6 @@ Helpers.resolveLocalId = async (input) => {
 				case 'post':
 					return { type: 'post', id: value, ...activityData };
 
-				case 'topic':
-					return { type: 'topic', id: value, ...activityData };
-
 				case 'cid':
 				case 'category':
 					return { type: 'category', id: value, ...activityData };
@@ -211,9 +186,6 @@ Helpers.resolveLocalId = async (input) => {
 
 				case 'message':
 					return { type: 'message', id: value, ...activityData };
-
-				case 'actor':
-					return { type: 'application', id: null };
 			}
 
 			return { type: null, id: null, ...activityData };
@@ -239,7 +211,7 @@ Helpers.resolveActor = (type, id) => {
 
 		case 'category':
 		case 'cid': {
-			return `${nconf.get('url')}${id > 0 ? `/category/${id}` : '/actor'}`;
+			return `${nconf.get('url')}/category/${id}`;
 		}
 
 		default:
@@ -353,14 +325,43 @@ Helpers.resolveObjects = async (ids) => {
 	return objects.length === 1 ? objects[0] : objects;
 };
 
+const titleishTags = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'title', 'p', 'span'];
+const titleRegex = new RegExp(`<(${titleishTags.join('|')})>(.+?)</\\1>`, 'm');
 Helpers.generateTitle = (html) => {
 	// Given an html string, generates a more appropriate title if possible
-	const prettified = pretty(html);
+	let title;
 
-	// Remove any lines that contain quote-post fallbacks
-	const cleaned = prettified.split('\n').filter(line => !line.startsWith('<p class="quote-inline"')).join('\n');
-	const sentences = tokenizer.sentences(cleaned, { sanitize: true, newline_boundaries: true });
-	let title = sentences.shift();
+	// Try the first paragraph-like element
+	const match = html.match(titleRegex);
+	if (match && match.index === 0) {
+		title = match[2];
+	}
+
+	// Fall back to newline splitting (i.e. if no paragraph elements)
+	title = title || html.split('\n').filter(Boolean).shift();
+
+	// Discard everything after a line break element
+	title = title.replace(/<br(\s\/)?>.*/g, '');
+
+	// Strip html
+	title = utils.stripHTMLTags(title);
+
+	// Split sentences and use only first one
+	const sentences = title
+		.split(/(\.|\?|!)\s/)
+		.reduce((memo, cur, idx, sentences) => {
+			if (idx % 2) {
+				memo.push(`${sentences[idx - 1]}${cur}`);
+			} else if (idx === sentences.length - 1) {
+				memo.push(cur);
+			}
+
+			return memo;
+		}, []);
+
+	if (sentences.length > 1) {
+		title = sentences.shift();
+	}
 
 	// Truncate down if too long
 	if (title.length > meta.config.maximumTitleLength) {
@@ -369,7 +370,6 @@ Helpers.generateTitle = (html) => {
 
 	return title;
 };
-
 
 Helpers.remoteAnchorToLocalProfile = async (content, isMarkdown = false) => {
 	let anchorRegex;
@@ -439,20 +439,14 @@ Helpers.remoteAnchorToLocalProfile = async (content, isMarkdown = false) => {
 	return content;
 };
 
-Helpers.makeSet = (object, properties) => new Set(properties.reduce((memo, property) =>
-	memo.concat(object[property] ?
-		Array.isArray(object[property]) ?
-			object[property] :
-			[object[property]] :
-		[]), []));
+// eslint-disable-next-line max-len
+Helpers.makeSet = (object, properties) => new Set(properties.reduce((memo, property) => memo.concat(Array.isArray(object[property]) ? object[property] : [object[property]]), []));
 
-Helpers.generateCollection = async ({ set, method, count, page, perPage, url }) => {
+Helpers.generateCollection = async ({ set, method, page, perPage, url }) => {
 	if (!method) {
-		method = db.getSortedSetRange.bind(null, set);
-	} else if (set) {
-		method = method.bind(null, set);
+		method = db.getSortedSetRange;
 	}
-	count = count ?? await db.sortedSetCard(set);
+	const count = await db.sortedSetCard(set);
 	const pageCount = Math.max(1, Math.ceil(count / perPage));
 	let items = [];
 	let paginate = true;
@@ -462,26 +456,17 @@ Helpers.generateCollection = async ({ set, method, count, page, perPage, url }) 
 		paginate = false;
 	}
 
-	page = parseInt(page, 10) || 1;
-	page = Math.max(1, Math.min(page, pageCount));
 	if (page) {
-		const start = Math.max(0, (page - 1) * perPage);
+		const invalidPagination = page < 1 || page > pageCount;
+		if (invalidPagination) {
+			throw new Error('[[error:invalid-data]]');
+		}
+
+		const start = Math.max(0, ((page - 1) * perPage) - 1);
 		const stop = Math.max(0, start + perPage - 1);
-		items = await method.call(null, start, stop);
+		items = await method(set, start, stop);
 	}
 
-	return Helpers.generateCollectionFromItems({
-		items,
-		count,
-		page,
-		perPage,
-		url,
-		paginate,
-	});
-};
-
-Helpers.generateCollectionFromItems = async ({ items, count, page, perPage, url, paginate }) => {
-	const pageCount = Math.max(1, Math.ceil(count / perPage));
 	const object = {
 		type: paginate && items.length ? 'OrderedCollectionPage' : 'OrderedCollection',
 		totalItems: count,
@@ -495,6 +480,8 @@ Helpers.generateCollectionFromItems = async ({ items, count, page, perPage, url,
 			object.next = page < pageCount ? `${url}?page=${page + 1}` : null;
 			object.prev = page > 1 ? `${url}?page=${page - 1}` : null;
 		}
+	} else {
+		object.orderedItems = [];
 	}
 
 	if (paginate) {
@@ -520,64 +507,4 @@ Helpers.generateDigest = (set) => {
 			const result = a.map((x, i) => x ^ b[i]);
 			return result.toString('hex');
 		});
-};
-
-Helpers.addressed = (id, activity) => {
-	// Returns Boolean for if id is found in addressing fields (to, cc, etc.)
-	if (!id || !activity || typeof activity !== 'object') {
-		return false;
-	}
-
-	const combined = new Set([
-		...(activity.to || []),
-		...(activity.cc || []),
-		...(activity.bto || []),
-		...(activity.bcc || []),
-		...(activity.audience || []),
-	]);
-
-	return combined.has(id);
-};
-
-Helpers.renderEmoji = (text, tags, strip = false) => {
-	if (!text || !tags) {
-		return text;
-	}
-
-	tags = Array.isArray(tags) ? tags : [tags];
-	let result = text;
-
-	const parsed = new Set();
-	tags.forEach((tag) => {
-		const isEmoji = tag.type === 'Emoji';
-		const hasUrl = tag.icon && tag.icon.url;
-		const isImage = !tag.icon?.mediaType || tag.icon.mediaType.startsWith('image/');
-
-		if (isEmoji && (strip || (hasUrl && isImage))) {
-			let { name } = tag;
-			if (parsed.has(name)) {
-				return;
-			}
-
-			if (!name.startsWith(':')) {
-				name = `:${name}`;
-			}
-			if (!name.endsWith(':')) {
-				name = `${name}:`;
-			}
-
-			const imgTag = strip ?
-				'' :
-				`<img class="not-responsive emoji" src="${tag.icon.url}" title="${name}" />`;
-
-			let index = result.indexOf(name);
-			while (index !== -1) {
-				result = result.substring(0, index) + imgTag + result.substring(index + name.length);
-				index = result.indexOf(name, index + imgTag.length);
-			}
-			parsed.add(name);
-		}
-	});
-
-	return result;
 };

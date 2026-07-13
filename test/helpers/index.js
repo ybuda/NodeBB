@@ -90,12 +90,12 @@ helpers.connectSocketIO = function (res, csrf_token) {
 };
 
 helpers.uploadFile = async function (uploadEndPoint, filePath, data, jar, csrf_token) {
-	const mime = require('mime').default;
+	const mime = require('mime');
 	const form = new FormData();
 	const file = await fs.promises.readFile(filePath);
 	const blob = new Blob([file], { type: mime.getType(filePath) });
 
-	form.append('files[]', blob, path.basename(filePath));
+	form.append('files', blob, path.basename(filePath));
 
 	if (data && data.params) {
 		form.append('params', data.params);

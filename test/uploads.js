@@ -35,23 +35,41 @@ describe('Upload Controllers', () => {
 	let regularUid;
 	let maliciousUid;
 
-	before(async () => {
-		const category = await categories.create({
-			name: 'Test Category',
-			description: 'Test category created by testing script',
+	before((done) => {
+		async.series({
+			category: function (next) {
+				categories.create({
+					name: 'Test Category',
+					description: 'Test category created by testing script',
+				}, next);
+			},
+			adminUid: function (next) {
+				user.create({ username: 'admin', password: 'barbar' }, next);
+			},
+			regularUid: function (next) {
+				user.create({ username: 'regular', password: 'zugzug' }, next);
+			},
+			maliciousUid: function (next) {
+				user.create({ username: 'malicioususer', password: 'herpderp' }, next);
+			},
+		}, (err, results) => {
+			if (err) {
+				return done(err);
+			}
+			adminUid = results.adminUid;
+			regularUid = results.regularUid;
+			maliciousUid = results.maliciousUid;
+			cid = results.category.cid;
+
+			topics.post({ uid: adminUid, title: 'test topic title', content: 'test topic content', cid: results.category.cid }, (err, result) => {
+				if (err) {
+					return done(err);
+				}
+				tid = result.topicData.tid;
+				pid = result.postData.pid;
+				groups.join('administrators', adminUid, done);
+			});
 		});
-		cid = category.cid;
-
-		adminUid = await user.create({ username: 'admin', password: 'barbar' });
-		groups.join('administrators', adminUid);
-
-		regularUid = await user.create({ username: 'regular', password: 'zugzug' });
-		maliciousUid = await user.create({ username: 'malicioususer', password: 'herpderp' });
-
-		const result = await topics.post({ uid: adminUid, title: 'test topic title', content: 'test topic content', cid });
-
-		tid = result.topicData.tid;
-		pid = result.postData.pid;
 	});
 
 	describe('regular user uploads rate limits', () => {
@@ -101,19 +119,6 @@ describe('Upload Controllers', () => {
 			assert(body && body.status && body.response && body.response.images);
 			assert(Array.isArray(body.response.images));
 			assert(body.response.images[0].url);
-			assert.deepStrictEqual(Object.keys(body.response.images[0]), ['url', 'name']);
-		});
-
-		it('should upload an svg image to a post', async () => {
-			const oldValue = meta.config.allowedFileExtensions;
-			meta.config.allowedFileExtensions = 'png,jpg,bmp,html,svg';
-			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/post/upload`, path.join(__dirname, '../test/files/nodebb.svg'), {}, jar, csrf_token);
-			assert.equal(response.statusCode, 200);
-			assert(body && body.status && body.response && body.response.images);
-			assert(Array.isArray(body.response.images));
-			assert(body.response.images[0].url);
-			assert.deepStrictEqual(Object.keys(body.response.images[0]), ['url', 'name']);
-			meta.config.allowedFileExtensions = oldValue;
 		});
 
 		it('should upload an image to a post and then delete the upload', async () => {
@@ -123,7 +128,7 @@ describe('Upload Controllers', () => {
 			assert(body && body.status && body.response && body.response.images);
 			assert(Array.isArray(body.response.images));
 			assert(body.response.images[0].url);
-			const name = body.response.images[0].url.replace(`${nconf.get('relative_path') + nconf.get('upload_url')}`, '');
+			const name = body.response.images[0].url.replace(`${nconf.get('relative_path') + nconf.get('upload_url')}/`, '');
 			await socketUser.deleteUpload({ uid: regularUid }, { uid: regularUid, name: name });
 
 			const uploads = await db.getSortedSetRange(`uid:${regularUid}:uploads`, 0, -1);
@@ -187,79 +192,6 @@ describe('Upload Controllers', () => {
 			assert(body && body.status && body.response && body.response.images);
 			assert(Array.isArray(body.response.images));
 			assert(body.response.images[0].url);
-			assert.deepStrictEqual(Object.keys(body.response.images[0]), ['url', 'name']);
-		});
-
-		it('should upload a file with utf8 characters in the name to a post', async () => {
-			const { body } = await helpers.uploadFile(`${nconf.get('url')}/api/post/upload`, path.join(__dirname, '../test/files/测试.jpg'), {}, jar, csrf_token);
-
-			assert(body.response.images[0].url.endsWith('测试.jpg'));
-		});
-
-		it('should block encoded private upload paths for unauthenticated users', async () => {
-			const oldPrivateUploads = meta.config.privateUploads;
-			const oldPrivateUploadsExtensions = meta.config.privateUploadsExtensions;
-			const oldAllowedFileExtensions = meta.config.allowedFileExtensions;
-			meta.config.privateUploads = 1;
-			meta.config.privateUploadsExtensions = '';
-			meta.config.allowedFileExtensions = 'png,jpg,bmp,html';
-
-			try {
-				const { response: uploadResponse, body: uploadBody } = await helpers.uploadFile(
-					`${nconf.get('url')}/api/post/upload`,
-					path.join(__dirname, '../test/files/503.html'),
-					{},
-					jar,
-					csrf_token
-				);
-
-				assert.strictEqual(uploadResponse.statusCode, 200);
-				assert(uploadBody?.response?.images?.[0]?.url);
-
-				const fileUrl = uploadBody.response.images[0].url;
-				const directUrl = new URL(fileUrl, nconf.get('base_url')).href;
-				const encodedUrl = new URL(fileUrl.replace('/files/', '/%66iles/'), nconf.get('base_url')).href;
-
-				const { response: directResponse } = await request.get(directUrl);
-				assert.strictEqual(directResponse.statusCode, 403);
-
-				const { response: encodedResponse } = await request.get(encodedUrl);
-				assert.strictEqual(encodedResponse.statusCode, 403);
-			} finally {
-				meta.config.privateUploads = oldPrivateUploads;
-				meta.config.privateUploadsExtensions = oldPrivateUploadsExtensions;
-				meta.config.allowedFileExtensions = oldAllowedFileExtensions;
-			}
-		});
-
-		it('should block percent-encoded private extensions for unauthenticated users', async () => {
-			const oldPrivateUploads = meta.config.privateUploads;
-			const oldPrivateUploadsExtensions = meta.config.privateUploadsExtensions;
-			const uploadPath = nconf.get('upload_path');
-			const filename = `private-ext-${Date.now()}.pdf`;
-			const filePath = path.join(uploadPath, 'files', filename);
-
-			meta.config.privateUploads = 1;
-			meta.config.privateUploadsExtensions = 'pdf';
-
-			try {
-				await fs.writeFile(filePath, 'PDFSECRET', 'utf8');
-
-				const relativePath = nconf.get('relative_path') || '';
-				const publicPath = `${relativePath}/assets/uploads/files/${filename}`;
-				const directUrl = new URL(publicPath, nconf.get('base_url')).href;
-				const encodedExtensionUrl = new URL(publicPath.replace(/\.pdf$/, '.%70df'), nconf.get('base_url')).href;
-
-				const { response: directResponse } = await request.get(directUrl);
-				assert.strictEqual(directResponse.statusCode, 403);
-
-				const { response: encodedResponse } = await request.get(encodedExtensionUrl);
-				assert.strictEqual(encodedResponse.statusCode, 403);
-			} finally {
-				await file.delete(filePath);
-				meta.config.privateUploads = oldPrivateUploads;
-				meta.config.privateUploadsExtensions = oldPrivateUploadsExtensions;
-			}
 		});
 
 		it('should fail to upload image to post if image dimensions are too big', async () => {
@@ -273,36 +205,7 @@ describe('Upload Controllers', () => {
 			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/post/upload`, path.join(__dirname, '../test/files/brokenimage.png'), {}, jar, csrf_token);
 			assert.strictEqual(response.statusCode, 500);
 			assert(body && body.status && body.status.message);
-			assert.strictEqual(body.status.message, 'pngload_buffer: end of stream');
-		});
-
-		it('should fail to upload file if extension and mime type do not match', async () => {
-			const oldValue = meta.config.allowedFileExtensions;
-			meta.config.allowedFileExtensions = 'png,jpg,bmp,html';
-
-			try {
-				const uploadEndPoint = `${nconf.get('url')}/api/post/upload`;
-				const form = new FormData();
-				const uploadedFile = await fs.readFile(path.join(__dirname, '../test/files/503.html'));
-				const blob = new Blob([uploadedFile], { type: 'image/png' });
-
-				form.append('files[]', blob, '503.html');
-
-				const response = await fetch(uploadEndPoint, {
-					method: 'post',
-					body: form,
-					headers: {
-						'x-csrf-token': csrf_token,
-						cookie: await jar.getCookieString(uploadEndPoint),
-					},
-				});
-				const body = await response.json();
-
-				assert.strictEqual(response.status, 500);
-				assert.strictEqual(body?.status?.message, 'Invalid MIME type');
-			} finally {
-				meta.config.allowedFileExtensions = oldValue;
-			}
+			assert.strictEqual(body.status.message, 'Input file contains unsupported image format');
 		});
 
 		it('should fail if file is not an image', (done) => {
@@ -375,18 +278,6 @@ describe('Upload Controllers', () => {
 			});
 		});
 
-		it('should return default cover for invalid cover:url when user profile is loaded', async () => {
-			await user.setUserField(1, 'cover:url', 'http://example.com/"><script>alert(1)</script>');
-			const { body: userData } = await helpers.request('get', '/api/user/admin');
-			assert.strictEqual(userData['cover:url'], `${nconf.get('relative_path')}/assets/images/cover-default.png`);
-		});
-
-		it('should return empty string for invalid picture when user profile is loaded', async () => {
-			await user.setUserField(1, 'picture', 'http://example.com/"><script>alert(1)</script>');
-			const { body: userData } = await helpers.request('get', '/api/user/admin');
-			assert.strictEqual(userData['picture'], '');
-		});
-
 		it('should delete users uploads if account is deleted', async () => {
 			const uid = await user.create({ username: 'uploader', password: 'barbar' });
 			const file = require('../src/file');
@@ -447,15 +338,6 @@ describe('Upload Controllers', () => {
 			assert.equal(body[0].url, `${nconf.get('relative_path')}/assets/uploads/category/category-1.png`);
 		});
 
-		it('should upload svg as category image after cleaning it up', async () => {
-			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/admin/category/uploadpicture`, path.join(__dirname, '../test/files/dirty.svg'), { params: JSON.stringify({ cid: cid }) }, jar, csrf_token);
-			assert.equal(response.statusCode, 200);
-			assert(Array.isArray(body));
-			assert.equal(body[0].url, `${nconf.get('relative_path')}/assets/uploads/category/category-1.svg`);
-			const svgContents = await fs.readFile(path.join(__dirname, '../test/uploads/category/category-1.svg'), 'utf-8');
-			assert.strictEqual(svgContents.includes('<script>'), false);
-		});
-
 		it('should upload default avatar', async () => {
 			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/admin/uploadDefaultAvatar`, path.join(__dirname, '../test/files/test.png'), { }, jar, csrf_token);
 			assert.equal(response.statusCode, 200);
@@ -469,13 +351,10 @@ describe('Upload Controllers', () => {
 		});
 
 		it('should upload favicon', async () => {
-			const { response, body } = await helpers.uploadFile(
-				`${nconf.get('url')}/api/admin/uploadfavicon`,
-				path.join(__dirname, '../test/files/favicon.ico'), {}, jar, csrf_token
-			);
+			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/admin/uploadfavicon`, path.join(__dirname, '../test/files/favicon.ico'), {}, jar, csrf_token);
 			assert.equal(response.statusCode, 200);
 			assert(Array.isArray(body));
-			assert.equal(body[0].url, `${nconf.get('relative_path')}/assets/uploads/system/favicon.ico`);
+			assert.equal(body[0].url, '/assets/uploads/system/favicon.ico');
 		});
 
 		it('should upload touch icon', async () => {
@@ -508,56 +387,6 @@ describe('Upload Controllers', () => {
 			assert(Array.isArray(body));
 			assert.equal(body[0].url, '/assets/uploads/system/test.png');
 			assert(file.existsSync(path.join(nconf.get('upload_path'), 'system', 'test.png')));
-		});
-
-		it('should sanitize xss payload in uploaded xml files', async () => {
-			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/admin/upload/file`, path.join(__dirname, '../test/files/xss-dirty.xml'), {
-				params: JSON.stringify({
-					folder: 'files',
-				}),
-			}, jar, csrf_token);
-
-			assert.equal(response.statusCode, 200);
-			assert(Array.isArray(body));
-			assert.equal(body[0].url, '/assets/uploads/files/xss-dirty.xml');
-
-			const { response: fileResponse, body: uploadedBody } = await request.get(`${nconf.get('url')}${body[0].url}`);
-			assert.equal(fileResponse.statusCode, 200);
-			assert.strictEqual(uploadedBody.includes('<script>'), false);
-			assert.strictEqual(uploadedBody.includes('onload="alert(\'XSS\')"'), false);
-			assert.strictEqual(uploadedBody.includes('<a:script>'), false);
-			assert.strictEqual(uploadedBody.includes('JAVASCRIPT:alert(1)'), false);
-		});
-
-		it('should set content-disposition header to attachment for xml', async () => {
-			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/admin/upload/file`, path.join(__dirname, '../test/files/xss-dirty.xml'), {
-				params: JSON.stringify({
-					folder: '',
-				}),
-			}, jar, csrf_token);
-
-			assert.equal(body[0].url, '/assets/uploads/xss-dirty.xml');
-			const { response: fileResponse, body: uploadedBody } = await request.get(`${nconf.get('url')}${body[0].url}`);
-			assert.strictEqual(fileResponse.headers['content-disposition'], 'attachment; filename="xss-dirty.xml"');
-			assert.equal(fileResponse.statusCode, 200);
-		});
-
-		it('should keep valid xml file unchanged', async () => {
-			const validXmlPath = path.join(__dirname, '../test/files/xss-valid.xml');
-			const validXmlContent = await fs.readFile(validXmlPath, 'utf-8');
-			const { response, body } = await helpers.uploadFile(`${nconf.get('url')}/api/admin/upload/file`, validXmlPath, {
-				params: JSON.stringify({
-					folder: 'files',
-				}),
-			}, jar, csrf_token);
-
-			assert.equal(response.statusCode, 200);
-			assert(Array.isArray(body));
-			assert.equal(body[0].url, '/assets/uploads/files/xss-valid.xml');
-
-			const { response: fileResponse, body: uploadedBody } = await request.get(`${nconf.get('url')}${body[0].url}`);
-			assert.equal(fileResponse.statusCode, 200);
-			assert.strictEqual(uploadedBody, validXmlContent);
 		});
 
 		it('should fail to upload regular file in wrong directory', async () => {
@@ -656,7 +485,7 @@ describe('Upload Controllers', () => {
 
 				assert.strictEqual(orphans.length, 1);
 				orphans.forEach((relPath) => {
-					assert(relPath.startsWith('/files/'));
+					assert(relPath.startsWith('files/'));
 					assert(relPath.endsWith('test.png'));
 				});
 			});

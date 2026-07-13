@@ -1,5 +1,7 @@
 'use strict';
 
+const url = require('url');
+
 const plugins = require('../plugins');
 const meta = require('../meta');
 const user = require('../user');
@@ -30,19 +32,19 @@ async function rewrite(req, res, next) {
 
 	let parsedUrl;
 	try {
-		parsedUrl = new URL(route, 'http://localhost.com');
+		parsedUrl = url.parse(route, true);
 	} catch (err) {
 		return next(err);
 	}
 
-	const pathname = parsedUrl.pathname.replace(/^\/+/, '');
+	const { pathname } = parsedUrl;
 	const hook = `action:homepage.get:${pathname}`;
 	if (!plugins.hooks.hasListeners(hook)) {
 		req.url = req.path + (!req.path.endsWith('/') ? '/' : '') + pathname;
 	} else {
 		res.locals.homePageRoute = pathname;
 	}
-	req.query = Object.assign(Object.fromEntries(parsedUrl.searchParams), req.query);
+	req.query = Object.assign(parsedUrl.query, req.query);
 
 	next();
 }

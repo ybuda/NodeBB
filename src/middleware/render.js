@@ -45,7 +45,7 @@ module.exports = function (middleware) {
 				options.loggedInUser = await getLoggedInUser(req);
 				options.relative_path = relative_path;
 				options.template = { name: template, [template]: true };
-				options.url = options.url || (req.baseUrl + req.path.replace(/^\/api/, ''));
+				options.url = (req.baseUrl + req.path.replace(/^\/api/, ''));
 				options.bodyClass = helpers.buildBodyClass(req, res, options);
 
 				if (req.loggedIn) {
@@ -88,7 +88,7 @@ module.exports = function (middleware) {
 					if (req.route && req.route.path === '/api/') {
 						options.title = '[[pages:home]]';
 					}
-					req.app.set('json spaces', process.env.NODE_ENV === 'development' || req.query.pretty ? 4 : 0);
+					req.app.set('json spaces', global.env === 'development' || req.query.pretty ? 4 : 0);
 					return res.json(options);
 				}
 				const optionsString = JSON.stringify(options).replace(/<\//g, '<\\/');
@@ -139,9 +139,9 @@ module.exports = function (middleware) {
 	}
 
 	async function loadHeaderFooterData(req, res, options) {
-		if (res.locals.renderHeaderType === 'client') {
+		if (res.locals.renderHeader) {
 			return await loadClientHeaderFooterData(req, res, options);
-		} else if (res.locals.renderHeaderType === 'admin') {
+		} else if (res.locals.renderAdminHeader) {
 			return await loadAdminHeaderFooterData(req, res, options);
 		}
 		return null;
@@ -150,7 +150,6 @@ module.exports = function (middleware) {
 	async function loadClientHeaderFooterData(req, res, options) {
 		const registrationType = meta.config.registrationType || 'normal';
 		res.locals.config = res.locals.config || {};
-		const userLang = res.locals.config.userLang || meta.config.userLang || 'en-GB';
 		const templateValues = {
 			title: meta.config.title || '',
 			'title:url': meta.config['title:url'] || '',
@@ -170,21 +169,20 @@ module.exports = function (middleware) {
 			widgets: options.widgets,
 		};
 
-		templateValues.configJSON = jsesc(translator.escape(JSON.stringify(res.locals.config)), { isScriptContext: true });
+		templateValues.configJSON = jsesc(JSON.stringify(res.locals.config), { isScriptContext: true });
 
-		const title = utils.stripHTMLTags(String(options.title || ''));
-
+		const title = translator.unescape(utils.stripHTMLTags(options.title || ''));
 		const results = await utils.promiseParallel({
 			isAdmin: user.isAdministrator(req.uid),
 			isGlobalMod: user.isGlobalModerator(req.uid),
 			isModerator: user.isModeratorOfAnyCategory(req.uid),
 			privileges: privileges.global.get(req.uid),
 			blocks: user.blocks.list(req.uid),
-			user: user.getUserFields(req.uid, ['uid', 'username', 'fullname', 'userslug', 'email', 'email:confirmed', 'picture', 'status', 'reputation']),
+			user: user.getUserData(req.uid),
 			isEmailConfirmSent: req.uid <= 0 ? false : await user.email.isValidationPending(req.uid),
-			languageDirection: translator.translate('[[language:dir]]', userLang),
-			timeagoCode: languages.userTimeagoCode(userLang),
-			browserTitle: translator.translate(controllersHelpers.buildTitle(title), userLang),
+			languageDirection: translator.translate('[[language:dir]]', res.locals.config.userLang),
+			timeagoCode: languages.userTimeagoCode(res.locals.config.userLang),
+			browserTitle: translator.translate(controllersHelpers.buildTitle(title)),
 			navigation: navigation.get(req.uid),
 			roomIds: req.uid > 0 ? db.getSortedSetRevRange(`uid:${req.uid}:chat:rooms`, 0, 0) : [],
 		});
@@ -226,7 +224,7 @@ module.exports = function (middleware) {
 		templateValues.showModMenu = results.user.isAdmin || results.user.isGlobalMod || results.user.isMod;
 		templateValues.canChat = (results.privileges.chat || results.privileges['chat:privileged']) && meta.config.disableChat !== 1;
 		templateValues.user = results.user;
-		templateValues.userJSON = jsesc(translator.escape(JSON.stringify(results.user)), { isScriptContext: true });
+		templateValues.userJSON = jsesc(JSON.stringify(results.user), { isScriptContext: true });
 		templateValues.useCustomCSS = meta.config.useCustomCSS && meta.config.customCSS;
 		templateValues.customCSS = templateValues.useCustomCSS ? (meta.config.renderedCustomCSS || '') : '';
 		templateValues.useCustomHTML = meta.config.useCustomHTML;
@@ -288,13 +286,13 @@ module.exports = function (middleware) {
 		res.locals.config.isRTL = results.languageDirection === 'rtl';
 		const templateValues = {
 			config: res.locals.config,
-			configJSON: jsesc(translator.escape(JSON.stringify(res.locals.config)), { isScriptContext: true }),
+			configJSON: jsesc(JSON.stringify(res.locals.config), { isScriptContext: true }),
 			relative_path: res.locals.config.relative_path,
 			adminConfigJSON: encodeURIComponent(JSON.stringify(results.configs)),
 			metaTags: results.tags.meta,
 			linkTags: results.tags.link,
 			user: userData,
-			userJSON: jsesc(translator.escape(JSON.stringify(userData)), { isScriptContext: true }),
+			userJSON: jsesc(JSON.stringify(userData), { isScriptContext: true }),
 			plugins: results.custom_header.plugins,
 			authentication: results.custom_header.authentication,
 			scripts: results.scripts,
@@ -383,13 +381,13 @@ module.exports = function (middleware) {
 
 	async function renderHeaderFooter(method, req, res, options, headerFooterData) {
 		let str = '';
-		if (res.locals.renderHeaderType === 'client') {
+		if (res.locals.renderHeader) {
 			if (method === 'renderHeader') {
 				str = await renderHeader(req, res, options, headerFooterData);
 			} else if (method === 'renderFooter') {
 				str = await renderFooter(req, res, options, headerFooterData);
 			}
-		} else if (res.locals.renderHeaderType === 'admin') {
+		} else if (res.locals.renderAdminHeader) {
 			if (method === 'renderHeader') {
 				str = await renderAdminHeader(req, res, options, headerFooterData);
 			} else if (method === 'renderFooter') {
@@ -401,7 +399,7 @@ module.exports = function (middleware) {
 
 	function getLang(req, res) {
 		let language = (res.locals.config && res.locals.config.userLang) || 'en-GB';
-		if (res.locals.renderHeaderType === 'admin') {
+		if (res.locals.renderAdminHeader) {
 			language = (res.locals.config && res.locals.config.acpLang) || 'en-GB';
 		}
 		return req.query.lang ? validator.escape(String(req.query.lang)) : language;

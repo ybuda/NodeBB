@@ -3,23 +3,15 @@
 'use strict';
 
 const fs = require('fs');
-const { spawnSync } = require('child_process');
 
-let needsBuild = false;
-
+// Render provides the database connection as an environment variable. Keep
+// this generated configuration out of Git while allowing pre-built assets to
+// be used on memory-constrained instances.
 if (process.env.MONGO_URI && !fs.existsSync('config.json')) {
-  fs.writeFileSync('config.json', JSON.stringify({
-    url: process.env.NODEBB_URL,
-    mongo: { uri: process.env.MONGO_URI },
-  }));
-  needsBuild = true;
-}
-
-if (needsBuild && process.argv[2] === 'start') {
-  const build = spawnSync(process.execPath, [__filename, 'build'], { stdio: 'inherit' });
-  if (build.status !== 0) {
-    process.exit(build.status || 1);
-  }
+	fs.writeFileSync('config.json', JSON.stringify({
+		url: process.env.NODEBB_URL,
+		mongo: { uri: process.env.MONGO_URI },
+	}));
 }
 
 require('./src/cli');

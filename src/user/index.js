@@ -46,11 +46,9 @@ User.exists = async function (uids) {
 	const singular = !Array.isArray(uids);
 	uids = singular ? [uids] : uids;
 
-	const [localExists, remoteExists] = await Promise.all([
-		db.isSortedSetMembers('users:joindate', uids),
-		meta.config.activitypubEnabled ? db.exists(uids.map(uid => `userRemote:${uid}`)) : uids.map(() => false),
-	]);
-	const results = localExists.map((local, idx) => local || remoteExists[idx]);
+	let results = await Promise.all(uids.map(async uid => await db.isMemberOfSortedSets(['users:joindate', 'usersRemote:lastCrawled'], uid)));
+	results = results.map(set => set.some(Boolean));
+
 	return singular ? results.pop() : results;
 };
 
@@ -100,11 +98,7 @@ User.getStatus = function (userData) {
 		return 'offline';
 	}
 	const isOnline = (Date.now() - userData.lastonline) < (meta.config.onlineCutoff * 60000);
-	let status = isOnline ? (userData.status || 'online') : 'offline';
-	if (!User.allowedStatus.includes(status)) {
-		status = 'offline';
-	}
-	return status;
+	return isOnline ? (userData.status || 'online') : 'offline';
 };
 
 User.getUidByUsername = async function (username) {
@@ -132,9 +126,8 @@ User.getUidByUserslug = async function (userslug) {
 };
 
 User.getUidsByUserslugs = async function (userslugs) {
-	const uniqueSlugs = _.uniq(userslugs);
-	const apSlugs = uniqueSlugs.filter(slug => slug.includes('@'));
-	const normalSlugs = uniqueSlugs.filter(slug => !slug.includes('@'));
+	const apSlugs = userslugs.filter(slug => slug.includes('@'));
+	const normalSlugs = userslugs.filter(slug => !slug.includes('@'));
 	const slugToUid = Object.create(null);
 	async function getApSlugs() {
 		await Promise.all(apSlugs.map(slug => activitypub.actors.assert(slug)));

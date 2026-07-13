@@ -155,7 +155,6 @@ get:
                                     type: string
                                     description: HTML that is injected into `topic.tpl` of themes that support custom profile info
                         editor:
-                          type: [number, string]
                           nullable: true
                         bookmarked:
                           type: boolean

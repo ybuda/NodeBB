@@ -23,17 +23,12 @@ privsTopics.get = async function (tid, uid) {
 		'posts:upvote', 'posts:downvote',
 		'posts:delete', 'posts:view_deleted', 'read', 'purge',
 	];
-	const topicData = await topics.getTopicFields(tid, ['cid', 'uid', 'locked', 'deleted', 'scheduled', 'postcount']);
-	const [userPrivileges, isAdministrator, isModerator, disabled, topicTools] = await Promise.all([
+	const topicData = await topics.getTopicFields(tid, ['cid', 'uid', 'locked', 'deleted', 'scheduled']);
+	const [userPrivileges, isAdministrator, isModerator, disabled] = await Promise.all([
 		helpers.isAllowedTo(privs, uid, topicData.cid),
 		user.isAdministrator(uid),
 		user.isModerator(uid, topicData.cid),
 		categories.getCategoryField(topicData.cid, 'disabled'),
-		plugins.hooks.fire('filter:topic.thread_tools', {
-			topic: topicData,
-			uid: uid,
-			tools: [],
-		}),
 	]);
 	const privData = _.zipObject(privs, userPrivileges);
 	const isOwner = uid > 0 && uid === topicData.uid;
@@ -41,20 +36,6 @@ privsTopics.get = async function (tid, uid) {
 	const editable = isAdminOrMod;
 	const deletable = (privData['topics:delete'] && (isOwner || isModerator)) || isAdministrator;
 	const mayReply = privsTopics.canViewDeletedScheduled(topicData, {}, false, privData['topics:schedule']);
-	const hasTools = topicTools.tools.length > 0;
-
-	let maxOwnerPosts = parseInt(meta.config.movingTopicsMaxPosts, 10);
-	if (Number.isNaN(maxOwnerPosts)) {
-		maxOwnerPosts = 5;
-	}
-	const exceedsOwnerMoveLimit = maxOwnerPosts > 0 && topicData.postcount > maxOwnerPosts;
-	const canMoveOwnTopic = !!(
-		isOwner &&
-		!isAdminOrMod &&
-		!topicData.locked &&
-		!topicData.deleted &&
-		!exceedsOwnerMoveLimit
-	);
 
 	return await plugins.hooks.fire('filter:privileges.topics.get', {
 		'topics:reply': (privData['topics:reply'] && ((!topicData.locked && mayReply) || isModerator)) || isAdministrator,
@@ -71,10 +52,9 @@ privsTopics.get = async function (tid, uid) {
 		read: privData.read || isAdministrator,
 		purge: (privData.purge && (isOwner || isModerator)) || isAdministrator,
 
-		view_thread_tools: editable || deletable || hasTools || canMoveOwnTopic,
+		view_thread_tools: editable || deletable,
 		editable: editable,
 		deletable: deletable,
-		canMoveOwnTopic: canMoveOwnTopic,
 		view_deleted: isAdminOrMod || isOwner || privData['posts:view_deleted'],
 		view_scheduled: privData['topics:schedule'] || isAdministrator,
 		isAdminOrMod: isAdminOrMod,
@@ -108,7 +88,6 @@ privsTopics.filterTids = async function (privilege, tids, uid) {
 	const canViewScheduled = _.zipObject(cids, results.view_scheduled);
 
 	tids = topicsData.filter(t => (
-		t.tid &&
 		cidsSet.has(t.cid) &&
 		(results.isAdmin || privsTopics.canViewDeletedScheduled(t, {}, canViewDeleted[t.cid], canViewScheduled[t.cid]))
 	)).map(t => t.tid);

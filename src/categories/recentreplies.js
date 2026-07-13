@@ -10,7 +10,6 @@ const topics = require('../topics');
 const privileges = require('../privileges');
 const plugins = require('../plugins');
 const batch = require('../batch');
-const utils = require('../utils');
 
 module.exports = function (Categories) {
 	Categories.getRecentReplies = async function (cid, uid, start, stop) {
@@ -28,7 +27,7 @@ module.exports = function (Categories) {
 	Categories.updateRecentTid = async function (cid, tid) {
 		const [count, numRecentReplies] = await Promise.all([
 			db.sortedSetCard(`cid:${cid}:recent_tids`),
-			db.getObjectField(`${utils.isNumber(cid) ? 'category' : 'categoryRemote'}:${cid}`, 'numRecentReplies'),
+			db.getObjectField(`category:${cid}`, 'numRecentReplies'),
 		]);
 
 		if (count >= numRecentReplies) {
@@ -72,7 +71,7 @@ module.exports = function (Categories) {
 			return;
 		}
 		const categoriesToLoad = categoryData.filter(c => c && c.numRecentReplies && parseInt(c.numRecentReplies, 10) > 0);
-		let keys;
+		let keys = [];
 		if (plugins.hooks.hasListeners('filter:categories.getRecentTopicReplies')) {
 			const result = await plugins.hooks.fire('filter:categories.getRecentTopicReplies', {
 				categories: categoriesToLoad,
@@ -96,14 +95,10 @@ module.exports = function (Categories) {
 	};
 
 	async function getTopics(tids, uid) {
-		const [topicData, crossposts] = await Promise.all([
-			topics.getTopicsFields(
-				tids,
-				['tid', 'uid', 'mainPid', 'slug', 'title', 'teaserPid', 'cid', 'postcount']
-			),
-			topics.crossposts.get(tids),
-		]);
-
+		const topicData = await topics.getTopicsFields(
+			tids,
+			['tid', 'mainPid', 'slug', 'title', 'teaserPid', 'cid', 'postcount']
+		);
 		topicData.forEach((topic) => {
 			if (topic) {
 				topic.teaserPid = topic.teaserPid || topic.mainPid;
@@ -128,7 +123,6 @@ module.exports = function (Categories) {
 					slug: topicData[index].slug,
 					title: topicData[index].title,
 				};
-				teaser.crossposts = crossposts[index];
 			}
 		});
 		return teasers.filter(Boolean);
@@ -137,21 +131,12 @@ module.exports = function (Categories) {
 	function assignTopicsToCategories(categories, topics) {
 		categories.forEach((category) => {
 			if (category) {
-				const categoryCid = String(category.cid);
-				category.posts = topics.filter(t =>
-					t.cid &&
-					(String(t.cid) === categoryCid ||
-						(t.parentCids && t.parentCids.includes(categoryCid)) ||
-						(t.crossposts.some(({ cid }) => String(cid) === categoryCid))
-					))
+				category.posts = topics.filter(t => t.cid && (t.cid === category.cid || t.parentCids.includes(category.cid)))
 					.sort((a, b) => b.timestamp - a.timestamp)
 					.slice(0, parseInt(category.numRecentReplies, 10));
 			}
 		});
-		topics.forEach((t) => {
-			t.parentCids = undefined;
-			t.crossposts = undefined;
-		});
+		topics.forEach((t) => { t.parentCids = undefined; });
 	}
 
 	function bubbleUpChildrenPosts(categoryData) {
@@ -191,15 +176,10 @@ module.exports = function (Categories) {
 
 			const bulkRemove = [];
 			const bulkAdd = [];
-			const bulkIncr = [];
 			postData.forEach((post) => {
 				bulkRemove.push([`cid:${oldCid}:uid:${post.uid}:pids`, post.pid]);
 				bulkRemove.push([`cid:${oldCid}:uid:${post.uid}:pids:votes`, post.pid]);
 				bulkAdd.push([`cid:${cid}:uid:${post.uid}:pids`, post.timestamp, post.pid]);
-				bulkIncr.push(
-					[`uid:${post.uid}:cids`, -1, oldCid],
-					[`uid:${post.uid}:cids`, 1, cid],
-				);
 				if (post.votes > 0 || post.votes < 0) {
 					bulkAdd.push([`cid:${cid}:uid:${post.uid}:pids:votes`, post.votes, post.pid]);
 				}
@@ -212,7 +192,6 @@ module.exports = function (Categories) {
 				db.sortedSetAdd(`cid:${cid}:pids`, timestamps, postsToReAdd.map(p => p.pid)),
 				db.sortedSetRemoveBulk(bulkRemove),
 				db.sortedSetAddBulk(bulkAdd),
-				db.sortedSetIncrByBulk(bulkIncr),
 			]);
 		}, { batch: 500 });
 	};

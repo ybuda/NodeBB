@@ -11,7 +11,7 @@ const meta = require('../meta');
 const db = require('../database');
 const groups = require('../groups');
 const plugins = require('../plugins');
-const activitypub = require('../activitypub');
+const api = require('../api');
 const tx = require('../translator');
 
 module.exports = function (User) {
@@ -68,7 +68,7 @@ module.exports = function (User) {
 			fields: fields,
 			oldData: oldData,
 		});
-		activitypub.out.update.profile(updateUid, uid);
+		api.activitypub.update.profile({ uid }, { uid: updateUid });
 
 		return await User.getUserFields(updateUid, [
 			'email', 'username', 'userslug',
@@ -109,17 +109,11 @@ module.exports = function (User) {
 					));
 				}
 
-				const isUrl = value && validator.isURL(String(value).trim(), {
-					require_protocol: true,
-					require_valid_protocol: true,
-					require_tld: true,
-				});
-
 				if (type === 'input-number' && !utils.isNumber(value)) {
 					throw new Error(tx.compile(
 						'error:custom-user-field-invalid-number', field.name
 					));
-				} else if (value && type === 'input-text' && isUrl) {
+				} else if (value && type === 'input-text' && validator.isURL(value)) {
 					throw new Error(tx.compile(
 						'error:custom-user-field-invalid-text', field.name
 					));
@@ -127,7 +121,7 @@ module.exports = function (User) {
 					throw new Error(tx.compile(
 						'error:custom-user-field-invalid-date', field.name
 					));
-				} else if (value && field.type === 'input-link' && !isUrl) {
+				} else if (value && field.type === 'input-link' && !validator.isURL(String(value))) {
 					throw new Error(tx.compile(
 						'error:custom-user-field-invalid-link', field.name
 					));
@@ -176,10 +170,16 @@ module.exports = function (User) {
 			}
 		}
 
-		User.checkUsernameLength(data.username);
+		if (data.username.length < meta.config.minimumUsernameLength) {
+			throw new Error('[[error:username-too-short]]');
+		}
+
+		if (data.username.length > meta.config.maximumUsernameLength) {
+			throw new Error('[[error:username-too-long]]');
+		}
 
 		const userslug = slugify(data.username);
-		if (!utils.isUserNameValid(data.username) || !utils.isSlugValid(userslug)) {
+		if (!utils.isUserNameValid(data.username) || !userslug) {
 			throw new Error('[[error:invalid-username]]');
 		}
 
@@ -200,20 +200,6 @@ module.exports = function (User) {
 		}
 	}
 	User.checkUsername = async username => isUsernameAvailable({ username });
-
-	User.checkUsernameLength = function (username) {
-		if (
-			!username ||
-			username.length < meta.config.minimumUsernameLength ||
-			slugify(username).length < meta.config.minimumUsernameLength
-		) {
-			throw new Error('[[error:username-too-short]]');
-		}
-
-		if (username.length > meta.config.maximumUsernameLength) {
-			throw new Error('[[error:username-too-long]]');
-		}
-	};
 
 	async function isAboutMeValid(callerUid, data) {
 		if (!data.aboutme) {
@@ -263,7 +249,7 @@ module.exports = function (User) {
 		if (!data.groupTitle) {
 			return;
 		}
-		let groupTitles;
+		let groupTitles = [];
 		if (validator.isJSON(data.groupTitle)) {
 			groupTitles = JSON.parse(data.groupTitle);
 			if (!Array.isArray(groupTitles)) {
@@ -282,9 +268,6 @@ module.exports = function (User) {
 	User.checkMinReputation = async function (callerUid, uid, setting) {
 		const isSelf = parseInt(callerUid, 10) === parseInt(uid, 10);
 		if (!isSelf || meta.config['reputation:disabled']) {
-			return;
-		}
-		if (await User.isAdminOrGlobalMod(callerUid)) {
 			return;
 		}
 		const reputation = await User.getUserField(uid, 'reputation');

@@ -10,11 +10,7 @@
 
 	<div id="themes" class="themes px-2">
 		<div class="directory row text-center" id="installed_themes">
-			{{{ if themes.length }}}
-			<!-- IMPORT admin/partials/theme_list.tpl -->
-			{{{ else }}}
-			<div class="alert alert-info no-themes">[[admin/appearance/themes:no-themes]]</div>
-			{{{ end}}}
+			<i class="fa fa-refresh fa-spin"></i> [[admin/appearance/themes:checking-for-installed]]
 		</div>
 	</div>
 </div>

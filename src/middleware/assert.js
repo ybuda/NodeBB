@@ -36,7 +36,7 @@ Assert.user = helpers.try(async (req, res, next) => {
 		return next();
 	}
 
-	await controllerHelpers.formatApiResponse(404, res, new Error('[[error:no-user]]'));
+	controllerHelpers.formatApiResponse(404, res, new Error('[[error:no-user]]'));
 });
 
 Assert.group = helpers.try(async (req, res, next) => {
@@ -82,23 +82,17 @@ Assert.flag = helpers.try(async (req, res, next) => {
 });
 
 Assert.path = helpers.try(async (req, res, next) => {
-	// Get path from either query or body
-	let _path = req.body.path;
-	if (!_path && req.query.path) {
-		_path = req.query.path;
-	}
-
 	// file: URL support
-	if (_path.startsWith('file:///')) {
-		_path = new URL(_path).pathname;
+	if (req.body.path.startsWith('file:///')) {
+		req.body.path = new URL(req.body.path).pathname;
 	}
 
 	// Strip upload_url if found
-	if (_path.startsWith(nconf.get('upload_url'))) {
-		_path = _path.slice(nconf.get('upload_url').length);
+	if (req.body.path.startsWith(nconf.get('upload_url'))) {
+		req.body.path = req.body.path.slice(nconf.get('upload_url').length);
 	}
 
-	const pathToFile = path.join(nconf.get('upload_path'), _path);
+	const pathToFile = path.join(nconf.get('upload_path'), req.body.path);
 	res.locals.cleanedPath = pathToFile;
 
 	// Guard against path traversal
@@ -159,7 +153,7 @@ Assert.message = helpers.try(async (req, res, next) => {
 
 	if (
 		!(await messaging.messageExists(req.params.mid)) ||
-        !(await messaging.canViewMessage(req.params.mid, roomId || req.params.roomId, req.uid))
+		!(await messaging.canViewMessage(req.params.mid, roomId || req.params.roomId, req.uid))
 	) {
 		return controllerHelpers.formatApiResponse(400, res, new Error('[[error:invalid-mid]]'));
 	}

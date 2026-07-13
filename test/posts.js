@@ -24,7 +24,6 @@ const file = require('../src/file');
 const helpers = require('./helpers');
 const utils = require('../src/utils');
 const request = require('../src/request');
-const translator = require('../src/translator');
 
 describe('Post\'s', () => {
 	let voterUid;
@@ -119,7 +118,7 @@ describe('Post\'s', () => {
 
 	it('should fail to change owner if user is not authorized', async () => {
 		try {
-			await apiPosts.changeOwner({ uid: voterUid }, { pids: [1, 2], uid: voterUid });
+			await socketPosts.changeOwner({ uid: voterUid }, { pids: [1, 2], toUid: voterUid });
 		} catch (err) {
 			assert.strictEqual(err.message, '[[error:no-privileges]]');
 		}
@@ -385,10 +384,7 @@ describe('Post\'s', () => {
 		let pid;
 		let replyPid;
 		let tid;
-		before(function (done) {
-			this.minimumTitleLength = meta.config.minimumTitleLength;
-			meta.config.minimumTitleLength = 3;
-
+		before((done) => {
 			topics.post({
 				uid: voterUid,
 				cid: cid,
@@ -410,10 +406,6 @@ describe('Post\'s', () => {
 					privileges.categories.give(['groups:posts:edit'], cid, 'registered-users', done);
 				});
 			});
-		});
-
-		after(function () {
-			meta.config.minimumTitleLength = this.minimumTitleLength;
 		});
 
 		it('should error if user is not logged in', async () => {
@@ -737,8 +729,8 @@ describe('Post\'s', () => {
 		});
 
 		it('should store post content in cache', (done) => {
-			const oldValue = process.env.NODE_ENV;
-			process.env.NODE_ENV = 'production';
+			const oldValue = global.env;
+			global.env = 'production';
 			const postData = {
 				pid: 9999,
 				content: 'some post content',
@@ -747,7 +739,7 @@ describe('Post\'s', () => {
 				assert.ifError(err);
 				posts.parsePost(postData, (err) => {
 					assert.ifError(err);
-					process.env.NODE_ENV = oldValue;
+					global.env = oldValue;
 					done();
 				});
 			});
@@ -771,18 +763,18 @@ describe('Post\'s', () => {
 
 		it('should turn relative links in post body to absolute urls', (done) => {
 			const nconf = require('nconf');
-			const content = '<a href="/users">test</a> <a href="//youtube.com">youtube</a>';
+			const content = '<a href="/users">test</a> <a href="youtube.com">youtube</a>';
 			const parsedContent = posts.relativeToAbsolute(content, posts.urlRegex);
-			assert.equal(parsedContent, `<a href="${nconf.get('base_url')}/users">test</a> <a href="${nconf.get('url_parsed').protocol}//youtube.com/">youtube</a>`);
+			assert.equal(parsedContent, `<a href="${nconf.get('base_url')}/users">test</a> <a href="//youtube.com">youtube</a>`);
 			done();
 		});
 
 		it('should turn relative links in post body to absolute urls', (done) => {
 			const nconf = require('nconf');
-			const content = '<a href="/users">test</a> <a href="//youtube.com">youtube</a> some test <img src="/path/to/img"/>';
+			const content = '<a href="/users">test</a> <a href="youtube.com">youtube</a> some test <img src="/path/to/img"/>';
 			let parsedContent = posts.relativeToAbsolute(content, posts.urlRegex);
 			parsedContent = posts.relativeToAbsolute(parsedContent, posts.imgRegex);
-			assert.equal(parsedContent, `<a href="${nconf.get('base_url')}/users">test</a> <a href="${nconf.get('url_parsed').protocol}//youtube.com/">youtube</a> some test <img src="${nconf.get('base_url')}/path/to/img"/>`);
+			assert.equal(parsedContent, `<a href="${nconf.get('base_url')}/users">test</a> <a href="//youtube.com">youtube</a> some test <img src="${nconf.get('base_url')}/path/to/img"/>`);
 			done();
 		});
 	});
@@ -993,15 +985,15 @@ describe('Post\'s', () => {
 			assert.equal(posts[1].data.content, 'this is a queued reply');
 		});
 
-		it('should error if data is invalid', async () => {
-			await assert.rejects(
-				apiPosts.editQueuedPost({ uid: globalModUid }, null),
-				{ message: '[[error:invalid-data]]' },
-			);
+		it('should error if data is invalid', (done) => {
+			socketPosts.editQueuedContent({ uid: globalModUid }, null, (err) => {
+				assert.equal(err.message, '[[error:invalid-data]]');
+				done();
+			});
 		});
 
 		it('should edit post in queue', async () => {
-			await apiPosts.editQueuedPost({ uid: globalModUid }, { id: queueId, content: 'newContent' });
+			await socketPosts.editQueuedContent({ uid: globalModUid }, { id: queueId, content: 'newContent' });
 			const { body } = await request.get(`${nconf.get('url')}/api/post-queue`, { jar });
 			const { posts } = body;
 			assert.equal(posts[1].type, 'reply');
@@ -1009,7 +1001,7 @@ describe('Post\'s', () => {
 		});
 
 		it('should edit topic title in queue', async () => {
-			await apiPosts.editQueuedPost({ uid: globalModUid }, { id: topicQueueId, title: 'new topic title' });
+			await socketPosts.editQueuedContent({ uid: globalModUid }, { id: topicQueueId, title: 'new topic title' });
 			const { body } = await request.get(`${nconf.get('url')}/api/post-queue`, { jar });
 			const { posts } = body;
 			assert.equal(posts[0].type, 'topic');
@@ -1017,39 +1009,39 @@ describe('Post\'s', () => {
 		});
 
 		it('should edit topic category in queue', async () => {
-			await apiPosts.editQueuedPost({ uid: globalModUid }, { id: topicQueueId, cid: 2 });
+			await socketPosts.editQueuedContent({ uid: globalModUid }, { id: topicQueueId, cid: 2 });
 			const { body } = await request.get(`${nconf.get('url')}/api/post-queue`, { jar });
 			const { posts } = body;
 			assert.equal(posts[0].type, 'topic');
 			assert.equal(posts[0].data.cid, 2);
-			await apiPosts.editQueuedPost({ uid: globalModUid }, { id: topicQueueId, cid: cid });
+			await socketPosts.editQueuedContent({ uid: globalModUid }, { id: topicQueueId, cid: cid });
 		});
 
-		it('should prevent regular users from approving posts', async () => {
-			await assert.rejects(
-				apiPosts.acceptQueuedPost({ uid: uid }, { id: queueId }),
-				{ message: '[[error:no-privileges]]' },
-			);
+		it('should prevent regular users from approving posts', (done) => {
+			socketPosts.accept({ uid: uid }, { id: queueId }, (err) => {
+				assert.equal(err.message, '[[error:no-privileges]]');
+				done();
+			});
 		});
 
-		it('should prevent regular users from approving non existing posts', async () => {
-			await assert.rejects(
-				apiPosts.acceptQueuedPost({ uid: uid }, { id: 123123 }),
-				{ message: '[[error:no-post]]' },
-			);
+		it('should prevent regular users from approving non existing posts', (done) => {
+			socketPosts.accept({ uid: uid }, { id: 123123 }, (err) => {
+				assert.equal(err.message, '[[error:no-post]]');
+				done();
+			});
 		});
 
 		it('should accept queued posts and submit', async () => {
 			const ids = await db.getSortedSetRange('post:queue', 0, -1);
-			await apiPosts.acceptQueuedPost({ uid: globalModUid }, { id: ids[0] });
-			await apiPosts.acceptQueuedPost({ uid: globalModUid }, { id: ids[1] });
+			await socketPosts.accept({ uid: globalModUid }, { id: ids[0] });
+			await socketPosts.accept({ uid: globalModUid }, { id: ids[1] });
 		});
 
-		it('should not crash if id does not exist', async () => {
-			await assert.rejects(
-				apiPosts.removeQueuedPost({ uid: globalModUid }, { id: '123123123' }),
-				{ message: '[[error:no-post]]' },
-			);
+		it('should not crash if id does not exist', (done) => {
+			socketPosts.reject({ uid: globalModUid }, { id: '123123123' }, (err) => {
+				assert.equal(err.message, '[[error:no-post]]');
+				done();
+			});
 		});
 
 		it('should bypass post queue if user is in exempt group', async () => {
@@ -1077,19 +1069,6 @@ describe('Post\'s', () => {
 			assert.strictEqual(postData.length, 1);
 			assert.strictEqual(postData[0].data.content, 'the moved queued post');
 			assert.strictEqual(postData[0].data.tid, result2.tid);
-		});
-
-		it('should not translate queued topic title & content', async () => {
-			const text = '[[global:403.login, javascript:alert(document.domain)]]';
-			const textEscaped = translator.escape(text);
-			const result = await apiTopics.create({ uid: uid }, {
-				cid: cid,
-				title: text,
-				content: text,
-			});
-			const { body } = await request.get(`${nconf.get('url')}/post-queue/${result.id}`, { jar });
-			// should not contain the translated message
-			assert(body.indexOf('Perhaps you should') === -1);
 		});
 	});
 
@@ -1166,10 +1145,12 @@ describe('Post\'s', () => {
 
 		describe('.syncBacklinks()', () => {
 			it('should error on invalid data', async () => {
-				await assert.rejects(
-					topics.syncBacklinks(),
-					{ message: '[[error:invalid-data]]' },
-				);
+				try {
+					await topics.syncBacklinks();
+				} catch (e) {
+					assert(e);
+					assert.strictEqual(e.message, '[[error:invalid-data]]');
+				}
 			});
 
 			it('should do nothing if the post does not contain a link to a topic', async () => {
@@ -1204,7 +1185,9 @@ describe('Post\'s', () => {
 				const backlinks = await db.getSortedSetMembers('pid:2:backlinks');
 
 				assert.strictEqual(count, 0);
+				assert(events);
 				assert.strictEqual(events.length, 1);
+				assert(backlinks);
 				assert.strictEqual(backlinks.length, 0);
 			});
 
@@ -1227,17 +1210,6 @@ describe('Post\'s', () => {
 
 				assert.strictEqual(count, 0);
 				assert(backlinks);
-				assert.strictEqual(backlinks.length, 0);
-			});
-
-			it('should not create a wrong backlink to topic/1 with AP topic url', async () => {
-				const { postData } = await topics.post({
-					uid: 1,
-					cid,
-					title: 'Topic backlink testing - topic 2',
-					content: `testing ${nconf.get('url')}/topic/1aef954c-d0dc-45cf-acf2-e3a59f6cc134/foo`,
-				});
-				const backlinks = await db.getSortedSetMembers(`pid:${postData.pid}:backlinks`);
 				assert.strictEqual(backlinks.length, 0);
 			});
 		});

@@ -110,9 +110,29 @@
 				</div>
 
 				<div class="mb-3">
+					<label class="form-label" for="og_image">og:image</label>
+					<div class="d-flex gap-1">
+						<input id="og_image" type="text" class="form-control" placeholder="" data-field="og:image" />
+
+						<input data-action="upload" data-target="og_image" data-route="{config.relative_path}/api/admin/uploadOgImage" type="button" class="btn btn-light" value="[[admin/settings/general:logo.upload]]" />
+						<button data-action="removeOgImage" type="button" class="btn btn-light"><i class="fa fa-trash text-danger"></i></button>
+					</div>
+				</div>
+
+				<div class="mb-3">
+					<label class="form-label" for="og_image">[[admin/settings/general:favicon]]</label>
+					<div class="d-flex gap-1">
+						<input id="faviconUrl" type="text" class="form-control" placeholder="favicon.ico" data-field="brand:favicon" data-action="upload" data-target="faviconUrl" data-route="{config.relative_path}/api/admin/uploadfavicon" readonly />
+
+						<input data-action="upload" data-target="faviconUrl" data-route="{config.relative_path}/api/admin/uploadfavicon" data-help="0" type="button" class="btn btn-light" value="[[admin/settings/general:favicon.upload]]" />
+						<button data-action="removeFavicon" type="button" class="btn btn-light"><i class="fa fa-trash text-danger"></i></button>
+					</div>
+				</div>
+
+				<div class="mb-3">
 					<label class="form-label" for="touchIconUrl">[[admin/settings/general:touch-icon]]</label>
 					<div class="d-flex gap-1">
-						<input id="touchIconUrl" type="text" class="form-control" data-field="brand:touchIcon" />
+						<input id="touchIconUrl" type="text" class="form-control" data-field="brand:touchIcon" data-action="upload" data-target="touchIconUrl" data-route="{config.relative_path}/api/admin/uploadTouchIcon" readonly />
 						<input data-action="upload" data-target="touchIconUrl" data-route="{config.relative_path}/api/admin/uploadTouchIcon" type="button" class="btn btn-light" value="[[admin/settings/general:touch-icon.upload]]" />
 						<button data-action="removeTouchIcon" type="button" class="btn btn-light"><i class="fa fa-trash text-danger"></i></button>
 					</div>
@@ -124,46 +144,13 @@
 				<div class="mb-3">
 					<label class="form-label" for="maskableIconUrl">[[admin/settings/general:maskable-icon]]</label>
 					<div class="d-flex gap-1">
-						<input id="maskableIconUrl" type="text" class="form-control" data-field="brand:maskableIcon" />
+						<input id="maskableIconUrl" type="text" class="form-control" data-field="brand:maskableIcon" data-action="upload" data-target="maskableIconUrl" data-route="{config.relative_path}/api/admin/uploadMaskableIcon" readonly />
 
 						<input data-action="upload" data-target="maskableIconUrl" data-route="{config.relative_path}/api/admin/uploadMaskableIcon" type="button" class="btn btn-light" value="[[admin/settings/general:touch-icon.upload]]" />
 						<button data-action="removeMaskableIcon" type="button" class="btn btn-light"><i class="fa fa-trash text-danger"></i></button>
 					</div>
 					<p class="form-text">
 						[[admin/settings/general:maskable-icon.help]]
-					</p>
-				</div>
-
-				<div class="mb-3">
-					<label class="form-label" for="og_image">og:image</label>
-					<div class="d-flex gap-1">
-						<input id="og_image" type="text" class="form-control" placeholder="" data-field="og:image" />
-
-						<input data-action="upload" data-target="og_image" data-route="{config.relative_path}/api/admin/uploadOgImage" type="button" class="btn btn-light" value="[[admin/settings/general:logo.upload]]" />
-						<button data-action="removeOgImage" type="button" class="btn btn-light"><i class="fa fa-trash text-danger"></i></button>
-					</div>
-				</div>
-
-				<div class="mb-3">
-					<label class="form-label" for="faviconUrl">[[admin/settings/general:favicon]]</label>
-					<div class="d-flex gap-1">
-						<input id="faviconUrl" type="text" class="form-control" placeholder="favicon.ico" data-field="brand:favicon" />
-
-						<input data-action="upload" data-target="faviconUrl" data-route="{config.relative_path}/api/admin/uploadfavicon" data-help="0" type="button" class="btn btn-light" value="[[admin/settings/general:favicon.upload]]" />
-						<button data-action="removeFavicon" type="button" class="btn btn-light"><i class="fa fa-trash text-danger"></i></button>
-					</div>
-				</div>
-
-				<div class="mb-3">
-					<label class="form-label" for="screenshotUrl">[[admin/settings/general:screenshot]]</label>
-					<div class="d-flex gap-1">
-						<input id="screenshotUrl" type="text" class="form-control" data-field="brand:screenshot" />
-
-						<input data-action="upload" data-target="screenshotUrl" data-route="{config.relative_path}/api/admin/uploadScreenshot" type="button" class="btn btn-light" value="[[admin/settings/general:touch-icon.upload]]" />
-						<button data-action="removeMaskableIcon" type="button" class="btn btn-light"><i class="fa fa-trash text-danger"></i></button>
-					</div>
-					<p class="form-text">
-						[[admin/settings/general:screenshot.help]]
 					</p>
 				</div>
 			</div>

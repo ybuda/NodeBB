@@ -1,7 +1,6 @@
 'use strict';
 
 const nconf = require('nconf');
-const winston = require('winston');
 const validator = require('validator');
 const querystring = require('querystring');
 const _ = require('lodash');
@@ -24,10 +23,8 @@ const url = nconf.get('url');
 helpers.noScriptErrors = async function (req, res, error, httpStatus) {
 	if (req.body.noscript !== 'true') {
 		if (typeof error === 'string') {
-			winston.error(`${new Error(error).stack}`);
 			return res.status(httpStatus).send(error);
 		}
-		winston.error(`${new Error(JSON.stringify(error)).stack}`);
 		return res.status(httpStatus).json(error);
 	}
 	const middleware = require('../middleware');
@@ -43,7 +40,6 @@ helpers.noScriptErrors = async function (req, res, error, httpStatus) {
 };
 
 helpers.terms = {
-	alltime: 'alltime',
 	daily: 'day',
 	weekly: 'week',
 	monthly: 'month',
@@ -105,7 +101,7 @@ helpers.buildFilters = function (url, filter, query) {
 helpers.buildTerms = function (url, term, query) {
 	return [{
 		name: '[[recent:alltime]]',
-		url: url + helpers.buildQueryString(query, 'term', 'alltime'),
+		url: url + helpers.buildQueryString(query, 'term', ''),
 		selected: term === 'alltime',
 		term: 'alltime',
 	}, {
@@ -191,17 +187,15 @@ function prependRelativePath(url) {
 		url : relative_path + url;
 }
 
-helpers.buildCategoryBreadcrumbs = async function (cid, userLang) {
+helpers.buildCategoryBreadcrumbs = async function (cid) {
 	const breadcrumbs = [];
 
 	while (parseInt(cid, 10)) {
 		/* eslint-disable no-await-in-loop */
 		const data = await categories.getCategoryFields(cid, ['name', 'slug', 'parentCid', 'disabled', 'isSection']);
-
-		const translatedName = await helpers.translateEscapedValue(data.name, userLang);
 		if (!data.disabled && !data.isSection) {
 			breadcrumbs.unshift({
-				text: translatedName,
+				text: String(data.name),
 				url: `${url}/category/${data.slug}`,
 				cid: cid,
 			});
@@ -249,29 +243,8 @@ helpers.buildTitle = function (pageTitle) {
 
 	const browserTitle = validator.escape(String(meta.config.browserTitle || meta.config.title || 'NodeBB'));
 
-	const title = titleLayout
-		.replace('{pageTitle}', () => pageTitle)
-		.replace('{browserTitle}', () => browserTitle);
+	const title = titleLayout.replace('{pageTitle}', () => pageTitle).replace('{browserTitle}', () => browserTitle);
 	return title;
-};
-
-helpers.translateEscapedValue = async function translateEscapedValue(value, lang) {
-	const rawValue = validator.unescape(translator.unescape(String(value || '')));
-	return validator.escape(await translator.translate(rawValue, lang));
-};
-
-// categoy names and descriptions can be tx keys, translate them safely here
-// used on category list, category page and users watched categories
-helpers.translateCategoryData = async function (categoryData, userLang) {
-	await Promise.all(categoryData.map(async (category) => {
-		if (category) {
-			category.name = await helpers.translateEscapedValue(category.name, userLang);
-			category.descriptionParsed = await plugins.hooks.fire(
-				'filter:parse.raw', await helpers.translateEscapedValue(category.description, userLang)
-			);
-			category.description = await helpers.translateEscapedValue(category.description, userLang);
-		}
-	}));
 };
 
 helpers.getCategories = async function (set, uid, privilege, selectedCid) {
@@ -289,7 +262,7 @@ async function getCategoryData(cids, uid, selectedCid, states, privilege) {
 		helpers.getVisibleCategories({
 			cids, uid, states, privilege, showLinks: false,
 		}),
-		helpers.getSelectedCategory(selectedCid, uid),
+		helpers.getSelectedCategory(selectedCid),
 	]);
 
 	const categoriesData = categories.buildForSelectCategories(visibleCategories, ['disabledClass']);
@@ -360,30 +333,28 @@ helpers.getVisibleCategories = async function (params) {
 	});
 };
 
-helpers.getSelectedCategory = async function (cids, uid) {
+helpers.getSelectedCategory = async function (cids) {
 	if (cids && !Array.isArray(cids)) {
 		cids = [cids];
 	}
 	cids = cids && cids.map(cid => parseInt(cid, 10));
-	const [selectedCategories, { userLang }] = await Promise.all([
-		categories.getCategoriesData(cids),
-		user.getSettings(uid),
-	]);
-	let selectedCategory = null;
+	let selectedCategories = await categories.getCategoriesData(cids);
 	const selectedCids = selectedCategories.map(c => c && c.cid).filter(Boolean);
 	if (selectedCategories.length > 1) {
-		selectedCategory = {
+		selectedCategories = {
 			icon: 'fa-plus',
 			name: '[[unread:multiple-categories-selected]]',
 			bgColor: '#ddd',
 		};
 	} else if (selectedCategories.length === 1 && selectedCategories[0]) {
-		selectedCategory = selectedCategories[0];
+		selectedCategories = selectedCategories[0];
+	} else {
+		selectedCategories = null;
 	}
-	if (selectedCategory) {
-		selectedCategory.name = await helpers.translateEscapedValue(selectedCategory.name, userLang);
-	}
-	return { selectedCids, selectedCategory };
+	return {
+		selectedCids: selectedCids,
+		selectedCategory: selectedCategories,
+	};
 };
 
 helpers.getSelectedTag = function (tags) {
@@ -391,11 +362,11 @@ helpers.getSelectedTag = function (tags) {
 		tags = [tags];
 	}
 	tags = tags || [];
-	const tagData = tags.map(t => String(t));
+	const tagData = tags.map(t => validator.escape(String(t)));
 	let selectedTag = null;
 	if (tagData.length) {
 		selectedTag = {
-			label: validator.escape(tagData.join(', ')),
+			label: tagData.join(', '),
 		};
 	}
 	return {
@@ -421,7 +392,7 @@ helpers.setCategoryTeaser = function (category) {
 	if (Array.isArray(category.posts) && category.posts.length && category.posts[0]) {
 		const post = category.posts[0];
 		category.teaser = {
-			url: `${nconf.get('relative_path')}/post/${encodeURIComponent(post.pid)}`,
+			url: `${nconf.get('relative_path')}/post/${post.pid}`,
 			timestampISO: post.timestampISO,
 			pid: post.pid,
 			tid: post.tid,
@@ -447,10 +418,6 @@ helpers.getHomePageRoutes = async function (uid) {
 		{
 			route: 'categories',
 			name: 'Categories',
-		},
-		{
-			route: 'world',
-			name: 'World',
 		},
 		{
 			route: 'unread',
@@ -538,11 +505,11 @@ helpers.formatApiResponse = async (statusCode, res, payload) => {
 
 		const returnPayload = await helpers.generateError(statusCode, message, res);
 		returnPayload.response = response;
-		if (process.env.NODE_ENV === 'development') {
-			const stack = payload instanceof Error ? payload.stack : new Error(String(payload)).stack;
-			returnPayload.stack = stack;
+
+		if (global.env === 'development') {
+			returnPayload.stack = payload.stack;
 			process.stdout.write(`[${chalk.yellow('api')}] Exception caught, error with stack trace follows:\n`);
-			process.stdout.write(stack);
+			process.stdout.write(payload.stack);
 		}
 		res.status(statusCode).json(returnPayload);
 	} else {
@@ -575,8 +542,8 @@ async function generateBannedResponse(res) {
 helpers.generateError = async (statusCode, message, res) => {
 	async function translateMessage(message) {
 		const { req } = res;
-		const settings = req?.query?.lang ? null : await user.getSettings(req.uid);
-		const language = String(req?.query?.lang || settings.userLang || meta.config.defaultLang);
+		const settings = req.query.lang ? null : await user.getSettings(req.uid);
+		const language = String(req.query.lang || settings.userLang || meta.config.defaultLang);
 		return await translator.translate(message, language);
 	}
 	if (message && message.startsWith('[[')) {
@@ -630,28 +597,6 @@ helpers.generateError = async (statusCode, message, res) => {
 	}
 
 	return payload;
-};
-
-helpers.validateParameters = function (query, fields, validation) {
-	// Parse query string params for filters, eliminate non-valid filters
-	const valid = fields.reduce((memo, field) => {
-		if (query.hasOwnProperty(field) && Object.hasOwn(validation, field)) {
-			const val = query[field];
-			const validationRule = validation[field];
-			if (Array.isArray(validationRule) && validationRule.includes(val)) {
-				memo[field] = val;
-			} else if (validationRule === 'number') {
-				if (Array.isArray(val)) {
-					memo[field] = val.filter(utils.isNumber);
-				} else if (utils.isNumber(val)) {
-					memo[field] = val;
-				}
-			}
-		}
-
-		return memo;
-	}, {});
-	return valid;
 };
 
 require('../promisify')(helpers);

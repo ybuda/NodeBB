@@ -44,7 +44,6 @@ module.exports = function (Groups) {
 
 			await image.resizeImage({
 				path: tempPath,
-				type: type,
 				width: 358,
 			});
 			const thumbUploadData = await image.uploadImage(`groupCoverThumb-${data.groupName}${path.extname(tempPath)}`, 'files', {

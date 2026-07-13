@@ -15,8 +15,6 @@ get:
                     type: string
                   alternate_logins:
                     type: boolean
-                  osw_logins:
-                    type: boolean
                   authentication:
                     type: array
                     items:

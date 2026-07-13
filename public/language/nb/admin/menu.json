@@ -25,7 +25,7 @@
 	"settings/general": "Generelt",
 	"settings/homepage": "Hjemmeside",
 	"settings/navigation": "Navigasjon",
-	"settings/reputation": "Omdømme ",
+	"settings/reputation": "Omdømme og flagg",
 	"settings/email": "E-post",
 	"settings/user": "Brukere",
 	"settings/group": "Grupper",
@@ -33,7 +33,7 @@
 	"settings/uploads": "Opplastinger",
 	"settings/languages": "Språk",
 	"settings/post": "Innlegg",
-	"settings/chat": "Chat",
+	"settings/chat": "Chatter",
 	"settings/pagination": "Sidetelling",
 	"settings/tags": "Emneord",
 	"settings/notifications": "Varsler",
@@ -47,16 +47,6 @@
 	"settings/advanced": "Avansert",
 
 	"settings.page-title": "%1 Innstillinger",
-
-	"section-federation": "Federation",
-	"federation/general": "General",
-	"federation/content": "Content",
-	"federation/rules": "Categorization",
-	"federation/relays": "Relays",
-	"federation/pruning": "Storage",
-	"federation/safety": "Trust & Safety",
-	"federation/analytics": "Analytics",
-	"federation/errors": "Errors",
 
 	"section-appearance": "Utseende",
 	"appearance/themes": "Temaer",
@@ -80,7 +70,6 @@
 	"advanced/logs": "Logger",
 	"advanced/errors": "Feil",
 	"advanced/cache": "Buffer",
-	"advanced/jobs": "Jobs",
 	"development/logger": "Logger",
 	"development/info": "Info",
 

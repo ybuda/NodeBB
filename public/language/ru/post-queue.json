@@ -10,8 +10,6 @@
 	"user": "Пользователь",
 	"when": "Когда",
 	"category": "Категория",
-	"crosspost-to": "Crosspost to",
-	"tags": "Tags",
 	"title": "Название",
 	"content": "Содержимое",
 	"posted": "Время",
@@ -21,7 +19,6 @@
 	"title-editable": "Нажмите на название для редактирования",
 	"reply": "Ответить",
 	"topic": "Тема",
-	"crosspost": "Crosspost",
 	"accept": "Подтвердить",
 	"reject": "Отклонить",
 	"remove": "Удалить",
@@ -42,6 +39,5 @@
 	"remove-selected-confirm": "Вы хотите удалить %1 выбранные записи?",
 	"bulk-accept-success": "%1 записи одобрены",
 	"bulk-reject-success": "%1 записи отклонены",
-	"links-in-this-post": "Links in this post",
-	"thumbs-in-this-post": "Thumbnails in this post"
+	"links-in-this-post": "Links in this post"
 }

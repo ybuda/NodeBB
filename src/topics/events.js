@@ -1,6 +1,5 @@
 'use strict';
 
-const validator = require('validator');
 const _ = require('lodash');
 const nconf = require('nconf');
 const db = require('../database');
@@ -73,10 +72,6 @@ Events._types = {
 		icon: 'fa-code-fork',
 		translation: async (event, language) => translateEventArgs(event, language, 'topic:user-forked-topic', renderUser(event), `${relative_path}${event.href}`, renderTimeago(event)),
 	},
-	crosspost: {
-		icon: 'fa-square-arrow-up-right',
-		translation: async (event, language) => translateEventArgs(event, language, 'topic:user-crossposted-topic', renderUser(event), renderCategory(event.toCategory), renderTimeago(event)),
-	},
 };
 
 Events.init = async () => {
@@ -112,18 +107,7 @@ function renderUser(event) {
 	if (!event.user || event.user.system) {
 		return '[[global:system-user]]';
 	}
-
-	const user = {
-		...event.user,
-		displayname: validator.escape(String(event.user.displayname)),
-		userslug: validator.escape(String(event.user.userslug)),
-	};
-
-	return `${helpers.buildAvatar(user, '16px', true)} <a href="${relative_path}/user/${user.userslug}">${user.displayname}</a>`;
-}
-
-function renderCategory(category) {
-	return `${helpers.buildCategoryLabel(category, 'a')}`;
+	return `${helpers.buildAvatar(event.user, '16px', true)} <a href="${relative_path}/user/${event.user.userslug}">${event.user.displayname}</a>`;
 }
 
 function renderTimeago(event) {
@@ -135,13 +119,12 @@ Events.get = async (tid, uid, reverse = false) => {
 		return [];
 	}
 
-	const eventIds = await db.getSortedSetRangeWithScores(`topic:${tid}:events`, 0, -1);
+	let eventIds = await db.getSortedSetRangeWithScores(`topic:${tid}:events`, 0, -1);
 	const keys = eventIds.map(obj => `topicEvent:${obj.value}`);
 	const timestamps = eventIds.map(obj => obj.score);
-
+	eventIds = eventIds.map(obj => obj.value);
 	let events = await db.getObjects(keys);
 	events.forEach((e, idx) => {
-		e.id = parseInt(e.id, 10);
 		e.timestamp = timestamps[idx];
 	});
 	await addEventsFromPostQueue(tid, uid, events);
@@ -193,10 +176,9 @@ async function addEventsFromPostQueue(tid, uid, events) {
 }
 
 async function modifyEvent({ uid, events }) {
-	const [users, fromCategories, toCategories, userSettings] = await Promise.all([
+	const [users, fromCategories, userSettings] = await Promise.all([
 		getUserInfo(events.map(event => event.uid).filter(Boolean)),
 		getCategoryInfo(events.map(event => event.fromCid).filter(Boolean)),
-		getCategoryInfo(events.map(event => event.toCid).filter(Boolean)),
 		user.getSettings(uid),
 	]);
 
@@ -225,9 +207,6 @@ async function modifyEvent({ uid, events }) {
 		}
 		if (event.hasOwnProperty('fromCid')) {
 			event.fromCategory = fromCategories[event.fromCid];
-		}
-		if (event.hasOwnProperty('toCid')) {
-			event.toCategory = toCategories[event.toCid];
 		}
 
 		Object.assign(event, Events._types[event.type]);
@@ -274,11 +253,7 @@ Events.log = async (tid, payload) => {
 };
 
 Events.purge = async (tid, eventIds = []) => {
-	const isArray = Array.isArray(tid);
-	if (isArray && !tid.length) {
-		return;
-	}
-	if (eventIds.length && !isArray) {
+	if (eventIds.length) {
 		const isTopicEvent = await db.isSortedSetMembers(`topic:${tid}:events`, eventIds);
 		eventIds = eventIds.filter((id, index) => isTopicEvent[index]);
 		await Promise.all([
@@ -286,11 +261,8 @@ Events.purge = async (tid, eventIds = []) => {
 			db.deleteAll(eventIds.map(id => `topicEvent:${id}`)),
 		]);
 	} else {
-		if (!isArray) {
-			tid = [tid];
-		}
-		const keys = tid.map(tid => `topic:${tid}:events`);
-		const eventIds = await db.getSortedSetRange(keys, 0, -1);
+		const keys = [`topic:${tid}:events`];
+		const eventIds = await db.getSortedSetRange(keys[0], 0, -1);
 		keys.push(...eventIds.map(id => `topicEvent:${id}`));
 
 		await db.deleteAll(keys);

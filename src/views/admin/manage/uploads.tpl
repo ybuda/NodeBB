@@ -11,12 +11,7 @@
 		</div>
 	</div>
 
-	<div class="alert alert-warning text-sm alert-dismissible fade show mb-0" role="alert">
-		[[admin/manage/uploads:unsafe-file-warning]]
-		<button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-	</div>
-
-	<div>
+	<div class="">
 	<!-- IMPORT admin/partials/breadcrumbs.tpl -->
 	</div>
 

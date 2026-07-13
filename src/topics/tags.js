@@ -29,7 +29,7 @@ module.exports = function (Topics) {
 		);
 		await db.sortedSetsAdd(topicSets, timestamp, tid);
 		await Topics.updateCategoryTagsCount([cid], tags);
-		await updateTagCount(tags);
+		await Promise.all(tags.map(updateTagCount));
 	};
 
 	Topics.filterTags = async function (tags, cid) {
@@ -185,21 +185,11 @@ module.exports = function (Topics) {
 		await Topics.updateCategoryTagsCount(Object.keys(allCids), [newTagName]);
 	}
 
-	async function updateTagCount(tags) {
-		if (!Array.isArray(tags)) {
-			tags = [tags];
-		}
-		if (!tags.length) return;
-
-		const counts = await Promise.all(tags.map(tag => Topics.getTagTopicCount(tag)));
-		await db.sortedSetAdd(
-			'tags:topic:count',
-			tags.map((tag, index) => counts[index] || 0),
-			tags
-		);
+	async function updateTagCount(tag) {
+		const count = await Topics.getTagTopicCount(tag);
+		await db.sortedSetAdd('tags:topic:count', count || 0, tag);
 		cache.del('tags:topic:count');
 	}
-	Topics.updateTagCount = updateTagCount;
 
 	Topics.getTagTids = async function (tag, start, stop) {
 		const tids = await db.getSortedSetRevRange(`tag:${tag}:topics`, start, stop);
@@ -215,7 +205,7 @@ module.exports = function (Topics) {
 	};
 
 	Topics.getTagTopicCount = async function (tag, cids = []) {
-		let count;
+		let count = 0;
 		if (cids.length) {
 			count = await db.sortedSetsCardSum(
 				cids.map(cid => `cid:${cid}:tag:${tag}:topics`)
@@ -256,21 +246,14 @@ module.exports = function (Topics) {
 	};
 
 	async function removeTagsFromTopics(tags) {
-		const uniqTids = new Set();
-		const tagsToRemove = new Set(tags);
-
-		await batch.processArray(tags, async (tags) => {
-			await Promise.all(tags.map(async (tag) => {
-				await batch.processSortedSet(`tag:${tag}:topics`, async (tids) => {
-					tids.forEach(tid => uniqTids.add(tid));
-				}, { batch: 500 });
-			}));
-		}, { batch: 50 });
-
-		await batch.processArray(Array.from(uniqTids), async (tids) => {
+		await async.eachLimit(tags, 50, async (tag) => {
+			const tids = await db.getSortedSetRange(`tag:${tag}:topics`, 0, -1);
+			if (!tids.length) {
+				return;
+			}
 			let topicsTags = await Topics.getTopicsTags(tids);
 			topicsTags = topicsTags.map(
-				topicTags => topicTags.filter(tag => tag && !tagsToRemove.has(tag))
+				topicTags => topicTags.filter(topicTag => topicTag && topicTag !== tag)
 			);
 
 			await db.setObjectBulk(
@@ -278,7 +261,7 @@ module.exports = function (Topics) {
 					`topic:${tid}`, { tags: topicsTags[index].join(',') },
 				]))
 			);
-		}, { batch: 500 });
+		});
 	}
 
 	async function removeTagsFromUsers(tags) {
@@ -340,7 +323,7 @@ module.exports = function (Topics) {
 		}
 		tags.forEach((tag) => {
 			tag.valueEscaped = validator.escape(String(tag.value));
-			tag.valueEncoded = encodeURIComponent(tag.value);
+			tag.valueEncoded = encodeURIComponent(tag.valueEscaped);
 			tag.class = tag.valueEscaped.replace(/\s/g, '-');
 		});
 		return tags;
@@ -398,7 +381,7 @@ module.exports = function (Topics) {
 			db.setObjectBulk(bulkSet),
 		]);
 
-		await updateTagCount(tags);
+		await Promise.all(tags.map(updateTagCount));
 		await Topics.updateCategoryTagsCount(_.uniq(topicData.map(t => t.cid)), tags);
 	};
 
@@ -423,7 +406,7 @@ module.exports = function (Topics) {
 			db.setObjectBulk(bulkSet),
 		]);
 
-		await updateTagCount(tags);
+		await Promise.all(tags.map(updateTagCount));
 		await Topics.updateCategoryTagsCount(_.uniq(topicData.map(t => t.cid)), tags);
 	};
 
@@ -447,7 +430,7 @@ module.exports = function (Topics) {
 		await db.sortedSetsRemove(sets, tid);
 
 		await Topics.updateCategoryTagsCount([cid], tags);
-		await updateTagCount(tags);
+		await Promise.all(tags.map(updateTagCount));
 	};
 
 	Topics.searchTags = async function (data) {
@@ -493,7 +476,7 @@ module.exports = function (Topics) {
 		if (parseInt(data.cid, 10)) {
 			tagWhitelist = await categories.getTagWhitelist([data.cid]);
 		}
-		let tags;
+		let tags = [];
 		if (Array.isArray(tagWhitelist[0]) && tagWhitelist[0].length) {
 			const scores = await db.sortedSetScores(`cid:${data.cid}:tags`, tagWhitelist[0]);
 			tags = tagWhitelist[0].map((tag, index) => ({ value: tag, score: scores[index] }));

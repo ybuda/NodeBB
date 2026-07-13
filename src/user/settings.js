@@ -21,8 +21,6 @@ module.exports = function (User) {
 		categoryWatchState: 'notwatching',
 	});
 
-	const validNotificationTypeValues = ['none', 'notification', 'email', 'notificationemail'];
-
 	User.getSettings = async function (uid) {
 		if (parseInt(uid, 10) <= 0) {
 			const isSpider = parseInt(uid, 10) === -1;
@@ -30,7 +28,7 @@ module.exports = function (User) {
 		}
 		let settings = await db.getObject(`user:${uid}:settings`);
 		settings = settings || {};
-		settings.uid = parseInt(uid, 10);
+		settings.uid = uid;
 		return await onSettingsLoaded(uid, settings);
 	};
 
@@ -50,7 +48,7 @@ module.exports = function (User) {
 	};
 
 	async function onSettingsLoaded(uid, settings) {
-		const data = await plugins.hooks.fire('filter:user.getSettings', { uid, settings });
+		const data = await plugins.hooks.fire('filter:user.getSettings', { uid: uid, settings: settings });
 		settings = data.settings;
 
 		const defaultTopicsPerPage = meta.config.topicsPerPage;
@@ -61,24 +59,16 @@ module.exports = function (User) {
 		settings.openOutgoingLinksInNewTab = parseInt(getSetting(settings, 'openOutgoingLinksInNewTab', 0), 10) === 1;
 		settings.dailyDigestFreq = getSetting(settings, 'dailyDigestFreq', 'off');
 		settings.usePagination = parseInt(getSetting(settings, 'usePagination', 0), 10) === 1;
-		settings.unreadCutoff = Math.max(1, Math.min(
-			Math.max(meta.config.unreadCutoff, 14),
-			settings.unreadCutoff ?
-				parseInt(settings.unreadCutoff, 10) :
-				meta.config.unreadCutoff,
-		));
-		settings.topicsPerPage = Math.max(1, Math.min(
+		settings.topicsPerPage = Math.min(
 			meta.config.maxTopicsPerPage,
-			settings.topicsPerPage ?
-				parseInt(settings.topicsPerPage, 10) :
-				defaultTopicsPerPage,
-		));
-		settings.postsPerPage = Math.max(1, Math.min(
+			settings.topicsPerPage ? parseInt(settings.topicsPerPage, 10) : defaultTopicsPerPage,
+			defaultTopicsPerPage
+		);
+		settings.postsPerPage = Math.min(
 			meta.config.maxPostsPerPage,
-			settings.postsPerPage ?
-				parseInt(settings.postsPerPage, 10) :
-				defaultPostsPerPage,
-		));
+			settings.postsPerPage ? parseInt(settings.postsPerPage, 10) : defaultPostsPerPage,
+			defaultPostsPerPage
+		);
 		settings.userLang = settings.userLang || meta.config.defaultLang || 'en-GB';
 		settings.acpLang = settings.acpLang || settings.userLang;
 		settings.topicPostSort = getSetting(settings, 'topicPostSort', 'oldest_to_newest');
@@ -86,34 +76,20 @@ module.exports = function (User) {
 		settings.followTopicsOnCreate = parseInt(getSetting(settings, 'followTopicsOnCreate', 1), 10) === 1;
 		settings.followTopicsOnReply = parseInt(getSetting(settings, 'followTopicsOnReply', 0), 10) === 1;
 		settings.upvoteNotifFreq = getSetting(settings, 'upvoteNotifFreq', 'all');
-		settings.disableIncomingChats = parseInt(getSetting(settings, 'disableIncomingChats', 0), 10) === 1;
+		settings.restrictChat = parseInt(getSetting(settings, 'restrictChat', 0), 10) === 1;
 		settings.topicSearchEnabled = parseInt(getSetting(settings, 'topicSearchEnabled', 0), 10) === 1;
 		settings.updateUrlWithPostIndex = parseInt(getSetting(settings, 'updateUrlWithPostIndex', 1), 10) === 1;
 		settings.bootswatchSkin = validator.escape(String(settings.bootswatchSkin || ''));
 		settings.homePageRoute = validator.escape(String(settings.homePageRoute || '')).replace(/&#x2F;/g, '/');
 		settings.scrollToMyPost = parseInt(getSetting(settings, 'scrollToMyPost', 1), 10) === 1;
 		settings.categoryWatchState = getSetting(settings, 'categoryWatchState', 'notwatching');
-		settings.hideReadNotifications = parseInt(getSetting(settings, 'hideReadNotifications', 0), 10) === 1;
 
 		const notificationTypes = await notifications.getAllNotificationTypes();
 		notificationTypes.forEach((notificationType) => {
 			settings[notificationType] = getSetting(settings, notificationType, 'notification');
-			if (!validNotificationTypeValues.includes(settings[notificationType])) {
-				settings[notificationType] = 'notification';
-			}
 		});
 
-		settings.chatAllowList = parseJSONArray(settings.chatAllowList || '[]', []);
-		settings.chatDenyList = parseJSONArray(settings.chatDenyList || '[]', []);
 		return settings;
-	}
-
-	function parseJSONArray(value, defaultValue) {
-		try {
-			return JSON.parse(value).map(String);
-		} catch (err) {
-			return defaultValue;
-		}
 	}
 
 	function getSetting(settings, key, defaultValue) {
@@ -128,68 +104,23 @@ module.exports = function (User) {
 	}
 
 	User.saveSettings = async function (uid, data) {
-		await validateSettings(data);
-
-		data.userLang = data.userLang || meta.config.defaultLang;
-
-		plugins.hooks.fire('action:user.saveSettings', { uid: uid, settings: data });
-
-		const settings = {
-			showemail: data.showemail,
-			showfullname: data.showfullname,
-			unreadCutoff: data.unreadCutoff,
-			openOutgoingLinksInNewTab: data.openOutgoingLinksInNewTab,
-			dailyDigestFreq: data.dailyDigestFreq || 'off',
-			usePagination: data.usePagination,
-			topicsPerPage: data.topicsPerPage,
-			postsPerPage: data.postsPerPage,
-			userLang: data.userLang,
-			acpLang: data.acpLang || meta.config.defaultLang,
-			followTopicsOnCreate: data.followTopicsOnCreate,
-			followTopicsOnReply: data.followTopicsOnReply,
-			disableIncomingChats: data.disableIncomingChats,
-			topicSearchEnabled: data.topicSearchEnabled,
-			updateUrlWithPostIndex: data.updateUrlWithPostIndex,
-			homePageRoute: ((data.homePageRoute === 'custom' ? data.homePageCustom : data.homePageRoute) || '').replace(/^\//, ''),
-			scrollToMyPost: data.scrollToMyPost,
-			upvoteNotifFreq: data.upvoteNotifFreq,
-			hideReadNotifications: data.hideReadNotifications,
-			bootswatchSkin: data.bootswatchSkin,
-			categoryWatchState: data.categoryWatchState,
-			categoryTopicSort: data.categoryTopicSort,
-			topicPostSort: data.topicPostSort,
-			chatAllowList: data.chatAllowList,
-			chatDenyList: data.chatDenyList,
-		};
-
-		const notificationTypes = await notifications.getAllNotificationTypes();
-		notificationTypes.forEach((notificationType) => {
-			if (Object.hasOwn(data, notificationType) && validNotificationTypeValues.includes(data[notificationType])) {
-				settings[notificationType] = data[notificationType];
-			}
-		});
-		const result = await plugins.hooks.fire('filter:user.saveSettings', { uid, settings, data });
-		await db.setObject(`user:${uid}:settings`, result.settings);
-		await User.updateDigestSetting(uid, data.dailyDigestFreq);
-		return await User.getSettings(uid);
-	};
-
-	function validateMinMax(value, min, max, errorMessage) {
-		const parsed = parseInt(value, 10);
-		if (!value || parsed < min || parsed > max) {
-			throw new Error(errorMessage);
-		}
-	}
-
-	async function validateSettings(data) {
-		const maxUnreadCutoff = Math.max(meta.config.unreadCutoff, 14);
-		validateMinMax(data.unreadCutoff, 1, maxUnreadCutoff, `[[error:invalid-unread-cutoff, ${maxUnreadCutoff}]]`);
-
 		const maxPostsPerPage = meta.config.maxPostsPerPage || 20;
-		validateMinMax(data.postsPerPage, 2, maxPostsPerPage, `[[error:invalid-pagination-value, 2, ${maxPostsPerPage}]]`);
+		if (
+			!data.postsPerPage ||
+			parseInt(data.postsPerPage, 10) <= 1 ||
+			parseInt(data.postsPerPage, 10) > maxPostsPerPage
+		) {
+			throw new Error(`[[error:invalid-pagination-value, 2, ${maxPostsPerPage}]]`);
+		}
 
 		const maxTopicsPerPage = meta.config.maxTopicsPerPage || 20;
-		validateMinMax(data.topicsPerPage, 2, maxTopicsPerPage, `[[error:invalid-pagination-value, 2, ${maxTopicsPerPage}]]`);
+		if (
+			!data.topicsPerPage ||
+			parseInt(data.topicsPerPage, 10) <= 1 ||
+			parseInt(data.topicsPerPage, 10) > maxTopicsPerPage
+		) {
+			throw new Error(`[[error:invalid-pagination-value, 2, ${maxTopicsPerPage}]]`);
+		}
 
 		const languageCodes = await languages.listCodes();
 		if (data.userLang && !languageCodes.includes(data.userLang)) {
@@ -198,30 +129,47 @@ module.exports = function (User) {
 		if (data.acpLang && !languageCodes.includes(data.acpLang)) {
 			throw new Error('[[error:invalid-language]]');
 		}
+		data.userLang = data.userLang || meta.config.defaultLang;
 
-		try {
-			if (Object.hasOwn(data, 'chatAllowList') && !Array.isArray(JSON.parse(data.chatAllowList))) {
-				throw new Error('[[error:invalid-chat-allow-list]]');
-			}
-			if (Object.hasOwn(data, 'chatDenyList') && !Array.isArray(JSON.parse(data.chatDenyList))) {
-				throw new Error('[[error:invalid-chat-deny-list]]');
-			}
-		} catch (err) {
-			throw new Error('[[error:invalid-data]]');
-		}
+		plugins.hooks.fire('action:user.saveSettings', { uid: uid, settings: data });
 
+		const settings = {
+			showemail: data.showemail,
+			showfullname: data.showfullname,
+			openOutgoingLinksInNewTab: data.openOutgoingLinksInNewTab,
+			dailyDigestFreq: data.dailyDigestFreq || 'off',
+			usePagination: data.usePagination,
+			topicsPerPage: Math.min(data.topicsPerPage, parseInt(maxTopicsPerPage, 10) || 20),
+			postsPerPage: Math.min(data.postsPerPage, parseInt(maxPostsPerPage, 10) || 20),
+			userLang: data.userLang || meta.config.defaultLang,
+			acpLang: data.acpLang || meta.config.defaultLang,
+			followTopicsOnCreate: data.followTopicsOnCreate,
+			followTopicsOnReply: data.followTopicsOnReply,
+			restrictChat: data.restrictChat,
+			topicSearchEnabled: data.topicSearchEnabled,
+			updateUrlWithPostIndex: data.updateUrlWithPostIndex,
+			homePageRoute: ((data.homePageRoute === 'custom' ? data.homePageCustom : data.homePageRoute) || '').replace(/^\//, ''),
+			scrollToMyPost: data.scrollToMyPost,
+			upvoteNotifFreq: data.upvoteNotifFreq,
+			bootswatchSkin: data.bootswatchSkin,
+			categoryWatchState: data.categoryWatchState,
+			categoryTopicSort: data.categoryTopicSort,
+			topicPostSort: data.topicPostSort,
+		};
 		const notificationTypes = await notifications.getAllNotificationTypes();
 		notificationTypes.forEach((notificationType) => {
-			if (Object.hasOwn(data, notificationType) && !validNotificationTypeValues.includes(data[notificationType])) {
-				throw new Error('[[error:invalid-notification-type]]');
+			if (data[notificationType]) {
+				settings[notificationType] = data[notificationType];
 			}
 		});
-	}
+		const result = await plugins.hooks.fire('filter:user.saveSettings', { uid: uid, settings: settings, data: data });
+		await db.setObject(`user:${uid}:settings`, result.settings);
+		await User.updateDigestSetting(uid, data.dailyDigestFreq);
+		return await User.getSettings(uid);
+	};
 
 	User.updateDigestSetting = async function (uid, dailyDigestFreq) {
-		await db.sortedSetsRemove([
-			'digest:day:uids', 'digest:week:uids', 'digest:biweek:uids', 'digest:month:uids',
-		], uid);
+		await db.sortedSetsRemove(['digest:day:uids', 'digest:week:uids', 'digest:month:uids'], uid);
 		if (['day', 'week', 'biweek', 'month'].includes(dailyDigestFreq)) {
 			await db.sortedSetAdd(`digest:${dailyDigestFreq}:uids`, Date.now(), uid);
 		}

@@ -10,8 +10,6 @@
 	"user": "משתמש",
 	"when": "כאשר",
 	"category": "קטגוריה",
-	"crosspost-to": "Crosspost to",
-	"tags": "תגיות",
 	"title": "כותרת",
 	"content": "תוכן",
 	"posted": "נשלח",
@@ -21,7 +19,6 @@
 	"title-editable": "לחצו על הכותרת כדי לערוך",
 	"reply": "תגובה",
 	"topic": "נושא",
-	"crosspost": "Crosspost",
 	"accept": "אישור",
 	"reject": "דחייה",
 	"remove": "הסרה",
@@ -42,6 +39,5 @@
 	"remove-selected-confirm": "האם להסיר %1 פוסטים שנבחרו?",
 	"bulk-accept-success": "%1 פוסטים אושרו",
 	"bulk-reject-success": "%1 פוסטים נדחו",
-	"links-in-this-post": "קישורים בפוסט הזה",
-	"thumbs-in-this-post": "תמונות ממוזערות בפוסט זה"
+	"links-in-this-post": "קישורים בפוסט הזה"
 }

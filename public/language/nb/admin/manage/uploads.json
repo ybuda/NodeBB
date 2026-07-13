@@ -8,6 +8,5 @@
     "confirm-delete": "Vil du virkelig slette denne filen?",
     "filecount": "%1 filer",
     "new-folder": "Ny mappe",
-    "name-new-folder": "Skriv inn et navn for den nye mappen",
-    "unsafe-file-warning": "Warning: Do not upload files that you do not trust. Files with certain extensions will be downloaded as attachments to prevent XSS attacks, but it is still possible for malicious files to cause harm if opened on your computer."
+    "name-new-folder": "Skriv inn et navn for den nye mappen"
 }

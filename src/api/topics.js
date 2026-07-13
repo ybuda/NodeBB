@@ -1,5 +1,7 @@
 'use strict';
 
+const validator = require('validator');
+
 const user = require('../user');
 const topics = require('../topics');
 const categories = require('../categories');
@@ -9,8 +11,8 @@ const privileges = require('../privileges');
 const events = require('../events');
 const batch = require('../batch');
 const activitypub = require('../activitypub');
-const utils = require('../utils');
 
+const activitypubApi = require('./activitypub');
 const apiHelpers = require('./helpers');
 
 const { doTopicAction } = apiHelpers;
@@ -21,13 +23,17 @@ const socketHelpers = require('../socket.io/helpers');
 const topicsAPI = module.exports;
 
 topicsAPI._checkThumbPrivileges = async function ({ tid, uid }) {
+	// req.params.tid could be either a tid (pushing a new thumb to an existing topic)
+	// or a post UUID (a new topic being composed)
+	const isUUID = validator.isUUID(tid);
+
 	// Sanity-check the tid if it's strictly not a uuid
-	if ((isNaN(parseInt(tid, 10)) || !await topics.exists(tid))) {
+	if (!isUUID && (isNaN(parseInt(tid, 10)) || !await topics.exists(tid))) {
 		throw new Error('[[error:no-topic]]');
 	}
 
 	// While drafts are not protected, tids are
-	if (!await privileges.topics.canEdit(tid, uid)) {
+	if (!isUUID && !await privileges.topics.canEdit(tid, uid)) {
 		throw new Error('[[error:no-privileges]]');
 	}
 };
@@ -56,8 +62,6 @@ topicsAPI.create = async function (caller, data) {
 
 	const payload = { ...data };
 	delete payload.tid;
-	delete payload.pid;
-	delete payload.generatedTitle;
 	payload.tags = payload.tags || [];
 	apiHelpers.setDefaultPostData(caller, payload);
 	const isScheduling = parseInt(data.timestamp, 10) > payload.timestamp;
@@ -76,15 +80,16 @@ topicsAPI.create = async function (caller, data) {
 	}
 
 	const result = await topics.post(payload);
+	await topics.thumbs.migrate(data.uuid, result.topicData.tid);
 
 	socketHelpers.emitToUids('event:new_post', { posts: [result.postData] }, [caller.uid]);
 	socketHelpers.emitToUids('event:new_topic', result.topicData, [caller.uid]);
 	socketHelpers.notifyNew(caller.uid, 'newTopic', { posts: [result.postData], topic: result.topicData });
 
 	if (!isScheduling) {
-		setImmediate(() => {
-			activitypub.out.create.note(caller.uid, result.postData.pid);
-		});
+		setTimeout(() => {
+			activitypubApi.create.note(caller, { pid: result.postData.pid });
+		}, 5000);
 	}
 
 	return result.topicData;
@@ -120,9 +125,7 @@ topicsAPI.reply = async function (caller, data) {
 	}
 
 	socketHelpers.notifyNew(caller.uid, 'newPost', result);
-	setImmediate(() => {
-		activitypub.out.create.note(caller.uid, postData);
-	});
+	activitypubApi.create.note(caller, { post: postData });
 
 	return postData;
 };
@@ -232,6 +235,17 @@ topicsAPI.getThumbs = async (caller, { tid, thumbsOnly }) => {
 	return await topics.thumbs.get(tid, { thumbsOnly });
 };
 
+// topicsAPI.addThumb
+
+topicsAPI.migrateThumbs = async (caller, { from, to }) => {
+	await Promise.all([
+		topicsAPI._checkThumbPrivileges({ tid: from, uid: caller.uid }),
+		topicsAPI._checkThumbPrivileges({ tid: to, uid: caller.uid }),
+	]);
+
+	await topics.thumbs.migrate(from, to);
+};
+
 topicsAPI.deleteThumb = async (caller, { tid, path }) => {
 	await topicsAPI._checkThumbPrivileges({ tid: tid, uid: caller.uid });
 	await topics.thumbs.delete(tid, path);
@@ -299,44 +313,24 @@ topicsAPI.bump = async (caller, { tid }) => {
 };
 
 topicsAPI.move = async (caller, { tid, cid }) => {
-	const tids = Array.isArray(tid) ? tid : [tid];
-	const [isAdmin, isModOfDestination, [canCreate, canRead], uids] = await Promise.all([
-		privileges.users.isAdministrator(caller.uid),
-		privileges.users.isModerator(caller.uid, cid),
-		privileges.categories.can(['topics:create', 'topics:read'], cid, caller.uid),
-		user.getUidsFromSet('users:online', 0, -1),
-	]);
-
-	let maxOwnerPosts = parseInt(meta.config.movingTopicsMaxPosts, 10);
-	if (Number.isNaN(maxOwnerPosts)) {
-		maxOwnerPosts = 5;
+	const canMove = await privileges.categories.isAdminOrMod(cid, caller.uid);
+	if (!canMove) {
+		throw new Error('[[error:no-privileges]]');
 	}
-	const canCreateAndReadDestination = canCreate && canRead;
-	const updateCids = [parseInt(cid, 10)];
+
+	const tids = Array.isArray(tid) ? tid : [tid];
+	const uids = await user.getUidsFromSet('users:online', 0, -1);
+	const cids = [parseInt(cid, 10)];
 
 	await batch.processArray(tids, async (tids) => {
-		const topicsData = await topics.getTopicsFields(tids, ['tid', 'cid', 'uid', 'mainPid', 'slug', 'deleted', 'locked', 'postcount']);
-		const cids = topicsData.map(t => t && t.cid);
-		const isModOfTopicCid = await privileges.users.isModerator(caller.uid, cids);
-
-		await Promise.all(tids.map(async (tid, index) => {
-			const topicData = topicsData[index];
-			if (!topicData || !topicData.uid || !topicData.cid) {
-				return;
+		await Promise.all(tids.map(async (tid) => {
+			const canMove = await privileges.topics.isAdminOrMod(tid, caller.uid);
+			if (!canMove) {
+				throw new Error('[[error:no-privileges]]');
 			}
-			const isModOfSourceAndDestination = isModOfDestination && isModOfTopicCid[index];
-			if (!isAdmin && !isModOfSourceAndDestination) {
-				const isOwnerOfTopic = parseInt(topicData.uid, 10) === parseInt(caller.uid, 10);
-				if (!isOwnerOfTopic || !canCreateAndReadDestination || topicData.locked || topicData.deleted) {
-					throw new Error('[[error:no-privileges]]');
-				}
-				if (maxOwnerPosts > 0 && topicData.postcount > maxOwnerPosts) {
-					throw new Error(`[[error:cant-move-topic-too-many-posts, ${maxOwnerPosts}]]`);
-				}
-			}
-			topicData.toCid = cid;
-			if (!updateCids.includes(topicData.cid)) {
-				updateCids.push(topicData.cid);
+			const topicData = await topics.getTopicFields(tid, ['tid', 'cid', 'mainPid', 'slug', 'deleted']);
+			if (!cids.includes(topicData.cid)) {
+				cids.push(topicData.cid);
 			}
 			await topics.tools.move(tid, {
 				cid,
@@ -347,17 +341,9 @@ topicsAPI.move = async (caller, { tid, cid }) => {
 			socketHelpers.emitToUids('event:topic_moved', topicData, notifyUids);
 			if (!topicData.deleted) {
 				socketHelpers.sendNotificationToTopicOwner(tid, caller.uid, 'move', 'notifications:moved-your-topic');
-
-				setImmediate(() => {
-					if (utils.isNumber(cid) && parseInt(cid, 10) === -1) {
-						activitypub.out.remove.context(caller.uid, tid); // 7888-style
-						activitypub.out.delete.note(caller.uid, topicData.mainPid); // 1b12-style
-					} else {
-						activitypub.out.move.context(caller.uid, tid);
-						activitypub.out.announce.topic(tid);
-					}
-					activitypub.out.undo.announce('cid', topicData.cid, tid); // microblogs
-				});
+				activitypubApi.announce.note(caller, { tid });
+				const { activity } = await activitypub.mocks.activities.create(topicData.mainPid, caller.uid);
+				await activitypub.feps.announce(topicData.mainPid, activity);
 			}
 
 			await events.log({
@@ -371,5 +357,5 @@ topicsAPI.move = async (caller, { tid, cid }) => {
 		}));
 	}, { batch: 10 });
 
-	await categories.onTopicsMoved(updateCids);
+	await categories.onTopicsMoved(cids);
 };

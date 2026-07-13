@@ -17,7 +17,8 @@ module.exports = function (SocketUser) {
 			throw new Error('[[error:invalid-uid]]');
 		}
 
-		if (!user.allowedStatus.includes(status)) {
+		const allowedStatus = ['online', 'offline', 'dnd', 'away'];
+		if (!allowedStatus.includes(status)) {
 			throw new Error('[[error:invalid-user-status]]');
 		}
 

@@ -9,9 +9,7 @@
 	"public-description": "Diễn đàn này được cấu hình tự động xếp hàng các bài đăng từ tài khoản mới, chờ người điều hành phê duyệt.<br />Nếu bạn đã xếp hàng các bài đăng đợi phê duyệt, bạn sẽ có thể xem chúng ở đây.",
 	"user": "Người dùng",
 	"when": "Khi",
-	"category": "Danh mục",
-	"crosspost-to": "Đăng chéo lên",
-	"tags": "Thẻ",
+	"category": "Chuyên mục",
 	"title": "Tiêu đề",
 	"content": "Nội dung",
 	"posted": "Đã đăng",
@@ -21,7 +19,6 @@
 	"title-editable": "Nhấp vào tiêu đề để chỉnh sửa",
 	"reply": "Trả lời",
 	"topic": "Chủ đề",
-	"crosspost": "Đăng chéo",
 	"accept": "Chấp nhận",
 	"reject": "Từ chối",
 	"remove": "Xóa",
@@ -42,6 +39,5 @@
 	"remove-selected-confirm": "Bạn có muốn xóa %1 bài đăng đã chọn không?",
 	"bulk-accept-success": "%1 bài đăng được chấp nhận",
 	"bulk-reject-success": "%1 bài đăng bị từ chối",
-	"links-in-this-post": "Liên kết trong bài này",
-	"thumbs-in-this-post": "Hình thu nhỏ trong bài viết này"
+	"links-in-this-post": "Liên kết trong bài này"
 }

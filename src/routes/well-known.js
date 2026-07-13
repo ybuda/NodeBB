@@ -3,7 +3,6 @@
 const nconf = require('nconf');
 const meta = require('../meta');
 const db = require('../database');
-const helpers = require('./helpers');
 
 module.exports = function (app, middleware, controllers) {
 	const url = nconf.get('url');
@@ -13,7 +12,7 @@ module.exports = function (app, middleware, controllers) {
 		res.redirect('/me/edit/password');
 	});
 
-	app.get('/.well-known/webfinger', helpers.tryRoute(controllers['well-known'].webfinger));
+	app.get('/.well-known/webfinger', controllers['well-known'].webfinger);
 
 	app.get('/.well-known/nodeinfo', (req, res) => {
 		res.json({
@@ -26,7 +25,7 @@ module.exports = function (app, middleware, controllers) {
 		});
 	});
 
-	app.get('/nodeinfo/2.0(.json)?', helpers.tryRoute(async (req, res) => {
+	app.get('/nodeinfo/2.0(.json)?', async (req, res) => {
 		const getDaysInMonth = (year, month) => new Date(year, month, 0).getDate();
 
 		function addMonths(input, months) {
@@ -72,10 +71,7 @@ module.exports = function (app, middleware, controllers) {
 			metadata: {
 				nodeName: meta.config.title || 'NodeBB',
 				nodeDescription: meta.config.description || '',
-				federation: {
-					enabled: !!meta.config.activitypubEnabled,
-				},
 			},
 		});
-	}));
+	});
 };

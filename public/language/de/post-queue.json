@@ -10,8 +10,6 @@
 	"user": "Benutzer",
 	"when": "Wann",
 	"category": "Kategorie",
-	"crosspost-to": "Auch gepostet auf",
-	"tags": "Tags",
 	"title": "Titel",
 	"content": "Inhalt",
 	"posted": "Gepostet",
@@ -21,7 +19,6 @@
 	"title-editable": "Titel zum Bearbeiten anklicken",
 	"reply": "Antworten",
 	"topic": "Thema",
-	"crosspost": "Crosspost",
 	"accept": "Annehmen",
 	"reject": "Ablehnen",
 	"remove": "Entfernen",
@@ -42,6 +39,5 @@
 	"remove-selected-confirm": "Möchtest Du %1 ausgewählte Beiträge entfernen?",
 	"bulk-accept-success": "%1 Beiträge akzeptiert",
 	"bulk-reject-success": "%1 Beiträge abgelehnt",
-	"links-in-this-post": "Links in diesem Beitrag",
-	"thumbs-in-this-post": "Miniaturansichten in diesem Beitrag"
+	"links-in-this-post": "Links in this post"
 }

@@ -24,10 +24,6 @@ profileController.get = async function (req, res, next) {
 		return next();
 	}
 
-	if (!req.loggedIn && meta.config.activitypubEnabled && !res.locals.isAPI && !utils.isNumber(userData.uid)) {
-		return helpers.redirect(res, `/outgoing?url=${encodeURIComponent(userData.uid)}`);
-	}
-
 	await incrementProfileViews(req, userData);
 
 	const [latestPosts, bestPosts, customUserFields] = await Promise.all([
@@ -56,11 +52,6 @@ profileController.get = async function (req, res, next) {
 	if (meta.config.activitypubEnabled) {
 		// Include link header for richer parsing
 		res.set('Link', `<${nconf.get('url')}/uid/${userData.uid}>; rel="alternate"; type="application/activity+json"`);
-
-		if (!utils.isNumber(userData.uid)) {
-			res.set('Link', `<${userData.url || userData.uid}>; rel="canonical"`);
-			res.set('x-robots-tag', 'noindex');
-		}
 	}
 
 	res.render('account/profile', userData);
@@ -159,12 +150,12 @@ function addTags(res, userData) {
 		res.locals.metaTags.push(
 			{
 				property: 'og:image',
-				content: `${url}${userData.picture}`,
+				content: userData.picture,
 				noEscape: true,
 			},
 			{
 				property: 'og:image:url',
-				content: `${url}${userData.picture}`,
+				content: userData.picture,
 				noEscape: true,
 			}
 		);
@@ -172,21 +163,10 @@ function addTags(res, userData) {
 
 	res.locals.linkTags = [];
 
-	if (utils.isNumber(userData.uid)) {
-		res.locals.linkTags.push({
-			rel: 'canonical',
-			href: `${url}/user/${userData.userslug}`,
-		});
-	} else {
-		res.locals.linkTags.push({
-			rel: 'canonical',
-			href: userData.url || userData.uid,
-		});
-		res.locals.metaTags.push({
-			name: 'robots',
-			content: 'noindex',
-		});
-	}
+	res.locals.linkTags.push({
+		rel: 'canonical',
+		href: `${url}/user/${userData.userslug}`,
+	});
 
 	if (meta.config.activitypubEnabled) {
 		res.locals.linkTags.push({

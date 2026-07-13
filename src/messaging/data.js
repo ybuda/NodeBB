@@ -8,7 +8,6 @@ const user = require('../user');
 const posts = require('../posts');
 const utils = require('../utils');
 const plugins = require('../plugins');
-const translator = require('../translator');
 
 const intFields = ['mid', 'timestamp', 'edited', 'fromuid', 'roomId', 'deleted', 'system'];
 
@@ -186,7 +185,7 @@ module.exports = function (Messaging) {
 	}
 	async function parseMessage(message, uid, roomId, isNew) {
 		if (message.system) {
-			return translator.escape(validator.escape(String(message.content)));
+			return validator.escape(String(message.content));
 		} else if (!utils.isNumber(message.mid)) {
 			return posts.sanitize(message.content);
 		}
@@ -197,12 +196,11 @@ module.exports = function (Messaging) {
 
 async function modifyMessage(message, fields, mid) {
 	if (message) {
-		const hasField = utils.createFieldChecker(fields);
 		db.parseIntFields(message, intFields, fields);
-		if (hasField('timestamp')) {
+		if (message.hasOwnProperty('timestamp')) {
 			message.timestampISO = utils.toISOString(message.timestamp);
 		}
-		if (hasField('edited')) {
+		if (message.hasOwnProperty('edited')) {
 			message.editedISO = utils.toISOString(message.edited);
 		}
 	}

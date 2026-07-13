@@ -19,8 +19,6 @@ get:
                     type: boolean
                   showTopicTools:
                     type: boolean
-                  reputation:disabled:
-                    type: number
                   nextStart:
                     type: number
                   topics:
@@ -52,11 +50,10 @@ get:
                                 icon:
                                   type: string
                                 backgroundImage:
-                                  type: string
                                   nullable: true
                                 imageClass:
-                                  type: string
                                   nullable: true
+                                  type: string
                                 bgColor:
                                   type: string
                                 color:
@@ -95,7 +92,7 @@ get:
                                   nullable: true
                                   type: string
                                 banned:
-                                  type: boolean
+                                  type: number
                                 status:
                                   type: string
                                 icon:text:
@@ -110,8 +107,6 @@ get:
                                     `icon:text` for the user's auto-generated
                                     icon
                                   example: "#f44336"
-                                banned_until:
-                                  type: number
                                 banned_until_readable:
                                   type: string
                               required:
@@ -128,7 +123,54 @@ get:
                                 - icon:bgColor
                                 - banned_until_readable
                             teaser:
-                              $ref: ../components/schemas/TeaserObject.yaml#/TeaserObject
+                              type: object
+                              nullable: true
+                              properties:
+                                pid:
+                                  type: number
+                                uid:
+                                  type: number
+                                  description: A user identifier
+                                timestamp:
+                                  type: number
+                                tid:
+                                  type: number
+                                  description: A topic identifier
+                                content:
+                                  type: string
+                                timestampISO:
+                                  type: string
+                                  description: An ISO 8601 formatted date string (complementing `timestamp`)
+                                user:
+                                  type: object
+                                  properties:
+                                    uid:
+                                      type: number
+                                      description: A user identifier
+                                    username:
+                                      type: string
+                                      description: A friendly name for a given user account
+                                    userslug:
+                                      type: string
+                                      description: An URL-safe variant of the username (i.e. lower-cased, spaces
+                                        removed, etc.)
+                                    picture:
+                                      nullable: true
+                                      type: string
+                                    icon:text:
+                                      type: string
+                                      description: A single-letter representation of a username. This is used in the
+                                        auto-generated icon given to users
+                                        without an avatar
+                                    icon:bgColor:
+                                      type: string
+                                      description: A six-character hexadecimal colour code assigned to the user. This
+                                        value is used in conjunction with
+                                        `icon:text` for the user's
+                                        auto-generated icon
+                                      example: "#f44336"
+                                index:
+                                  type: number
                             tags:
                               type: array
                               items:
@@ -142,7 +184,6 @@ get:
                             unread:
                               type: boolean
                             bookmark:
-                              type: boolean
                               nullable: true
                             unreplied:
                               type: boolean

@@ -1,10 +1,8 @@
 'use strict';
 
 module.exports = function (module) {
-	const util = require('util');
-
 	const helpers = require('./helpers');
-	const dbHelpers = require('../helpers');
+	const util = require('util');
 	const Cursor = require('pg-cursor');
 	Cursor.prototype.readAsync = util.promisify(Cursor.prototype.read);
 	const sleep = util.promisify(setTimeout);
@@ -230,7 +228,7 @@ SELECT o."_key" k,
 		if (!Array.isArray(keys)) {
 			keys = [keys];
 		}
-		let counts;
+		let counts = [];
 		if (min !== '-inf' || max !== '+inf') {
 			if (min === '-inf') {
 				min = null;
@@ -549,19 +547,18 @@ RETURNING "score" s`,
 	};
 
 	module.sortedSetIncrByBulk = async function (data) {
-		if (!Array.isArray(data) || !data.length) {
+		if (!data.length) {
 			return [];
 		}
 
-		const aggregated = dbHelpers.aggregateIncrByBulk(data);
 		return await module.transaction(async (client) => {
-			await helpers.ensureLegacyObjectsType(client, aggregated.map(item => item[0]), 'zset');
+			await helpers.ensureLegacyObjectsType(client, data.map(item => item[0]), 'zset');
 
 			const values = [];
 			const queryParams = [];
 			let paramIndex = 1;
 
-			aggregated.forEach(([key, increment, value]) => {
+			data.forEach(([key, increment, value]) => {
 				value = helpers.valueToString(value);
 				increment = parseFloat(increment);
 				values.push(key, value, increment);
@@ -710,9 +707,9 @@ SELECT z."value",
          ON o."_key" = z."_key"
         AND o."type" = z."type"
  WHERE o."_key" = $1::TEXT
-  AND z."value" LIKE $3
+  AND z."value" LIKE '${match}'
   LIMIT $2::INTEGER`,
-			values: [params.key, params.limit, match],
+			values: [params.key, params.limit],
 		});
 		if (!params.withScores) {
 			return res.rows.map(r => r.value);

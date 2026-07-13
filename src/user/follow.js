@@ -58,31 +58,17 @@ module.exports = function (User) {
 			]);
 		}
 
-		User.syncFollowCounts(uid, true, false);
-		User.syncFollowCounts(theiruid, false, true);
+		const [followingCount, followingRemoteCount, followerCount, followerRemoteCount] = await Promise.all([
+			db.sortedSetCard(`following:${uid}`),
+			db.sortedSetCard(`followingRemote:${uid}`),
+			db.sortedSetCard(`followers:${theiruid}`),
+			db.sortedSetCard(`followersRemote:${theiruid}`),
+		]);
+		await Promise.all([
+			User.setUserField(uid, 'followingCount', followingCount + followingRemoteCount),
+			User.setUserField(theiruid, 'followerCount', followerCount + followerRemoteCount),
+		]);
 	}
-
-	User.syncFollowCounts = async function (uid, following, followers) {
-		const sets = [];
-		const property = [];
-		if (following) {
-			property.push('followingCount');
-			sets.push(`following:${uid}`, `followingRemote:${uid}`);
-		}
-		if (followers) {
-			property.push('followerCount');
-			sets.push(`followers:${uid}`, `followersRemote:${uid}`);
-		};
-
-		const values = await db.sortedSetsCard(sets);
-		const payload = property.reduce((payload, cur, idx) => {
-			const sum = values[idx * 2] + values[(idx * 2) + 1];
-			payload[cur] = sum;
-			return payload;
-		}, {});
-
-		await User.setUserFields(uid, payload);
-	};
 
 	User.getFollowing = async function (uid, start, stop) {
 		return await getFollow(uid, 'following', start, stop);
@@ -96,14 +82,10 @@ module.exports = function (User) {
 		if (parseInt(uid, 10) <= 0) {
 			return [];
 		}
-		let uids = await db.getSortedSetRevRange([
+		const uids = await db.getSortedSetRevRange([
 			`${type}:${uid}`,
 			`${type}Remote:${uid}`,
 		], start, stop);
-
-		// Filter out remote categories
-		const isCategory = await db.exists(uids.map(uid => `categoryRemote:${uid}`));
-		uids = uids.filter((uid, idx) => !isCategory[idx]);
 
 		const data = await plugins.hooks.fire(`filter:user.${type}`, {
 			uids: uids,

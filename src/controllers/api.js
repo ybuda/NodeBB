@@ -14,7 +14,6 @@ const utils = require('../utils');
 
 const apiController = module.exports;
 
-const url = nconf.get('url');
 const relative_path = nconf.get('relative_path');
 const upload_url = nconf.get('upload_url');
 const asset_base_url = nconf.get('asset_base_url');
@@ -27,7 +26,6 @@ const fontawesome_version = utils.getFontawesomeVersion();
 
 apiController.loadConfig = async function (req) {
 	const config = {
-		url,
 		relative_path,
 		upload_url,
 		asset_base_url,
@@ -66,7 +64,6 @@ apiController.loadConfig = async function (req) {
 		topicsPerPage: meta.config.topicsPerPage || 20,
 		postsPerPage: meta.config.postsPerPage || 20,
 		maximumFileSize: meta.config.maximumFileSize,
-		convertPastedImageTo: meta.config.convertPastedImageTo,
 		'theme:id': meta.config['theme:id'],
 		'theme:src': meta.config['theme:src'],
 		defaultLang: meta.config.defaultLang || 'en-GB',
@@ -105,11 +102,6 @@ apiController.loadConfig = async function (req) {
 		},
 		activitypub: {
 			probe: meta.config.activitypubEnabled && meta.config.activitypubProbe,
-			worldDefaultCid: meta.config.activitypubWorldDefaultCid,
-		},
-		tinycon: {
-			color: meta.config.tinyconColor,
-			background: meta.config.tinyconBackground,
 		},
 	};
 
@@ -146,7 +138,6 @@ apiController.loadConfig = async function (req) {
 			config.bootswatchSkin = settings.bootswatchSkin;
 		}
 	}
-	config.hideReadNotifications = settings.hideReadNotifications;
 
 	// Overrides based on privilege
 	config.disableChatMessageEditing = isAdminOrGlobalMod ? false : config.disableChatMessageEditing;

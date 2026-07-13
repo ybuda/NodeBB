@@ -7,7 +7,8 @@ const events = require('../events');
 const user = require('../user');
 const groups = require('../groups');
 const privileges = require('../privileges');
-const activitypub = require('../activitypub');
+
+const activitypubApi = require('./activitypub');
 
 const categoriesAPI = module.exports;
 
@@ -64,7 +65,7 @@ categoriesAPI.update = async function (caller, data) {
 	const payload = {};
 	payload[cid] = values;
 	await categories.update(payload);
-	activitypub.out.update.category(cid); // background
+	activitypubApi.update.category(caller, { cid }); // background
 };
 
 categoriesAPI.delete = async function (caller, { cid }) {
@@ -125,7 +126,7 @@ categoriesAPI.getTopics = async (caller, data) => {
 		throw new Error('[[error:no-privileges]]');
 	}
 
-	const infScrollTopicsPerPage = settings.topicsPerPage;
+	const infScrollTopicsPerPage = 20;
 	const sort = data.sort || data.categoryTopicSort || meta.config.categoryTopicSort || 'recently_replied';
 
 	let start = Math.max(0, parseInt(data.after || 0, 10));
@@ -156,9 +157,7 @@ categoriesAPI.getTopics = async (caller, data) => {
 
 categoriesAPI.setWatchState = async (caller, { cid, state, uid }) => {
 	let targetUid = caller.uid;
-	let cids = Array.isArray(cid) ? cid : [cid];
-	cids = cids.map(cid => String(cid));
-
+	const cids = Array.isArray(cid) ? cid.map(cid => parseInt(cid, 10)) : [parseInt(cid, 10)];
 	if (uid) {
 		targetUid = uid;
 	}
@@ -169,9 +168,9 @@ categoriesAPI.setWatchState = async (caller, { cid, state, uid }) => {
 	// filter to subcategories of cid
 	let cat;
 	do {
-		cat = categoryData.find(c => !cids.includes(String(c.cid)) && cids.includes(String(c.parentCid)));
+		cat = categoryData.find(c => !cids.includes(c.cid) && cids.includes(c.parentCid));
 		if (cat) {
-			cids.push(String(cat.cid));
+			cids.push(cat.cid);
 		}
 	} while (cat);
 

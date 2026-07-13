@@ -54,15 +54,9 @@ module.exports = function (Groups) {
 		if (!Array.isArray(groupNames)) {
 			groupNames = [groupNames];
 		}
-		const sets = [
-			...groupNames.map(g => `group:${g}:pending`),
-			...groupNames.map(g => `group:${g}:invited`),
-		];
-		const isMembers = await db.isMemberOfSets(sets, uid);
-		const toRemoveSets = sets.filter((set, index) => isMembers[index]);
-		if (toRemoveSets.length) {
-			await db.setsRemove(toRemoveSets, uid);
-		}
+		const sets = [];
+		groupNames.forEach(groupName => sets.push(`group:${groupName}:pending`, `group:${groupName}:invited`));
+		await db.setsRemove(sets, uid);
 	};
 
 	Groups.invite = async function (groupName, uids) {
@@ -72,6 +66,7 @@ module.exports = function (Groups) {
 		const notificationData = await Promise.all(uids.map(uid => notifications.create({
 			type: 'group-invite',
 			bodyShort: `[[groups:invited.notification-title, ${groupName}]]`,
+			bodyLong: '',
 			nid: `group:${groupName}:uid:${uid}:invite`,
 			path: `/groups/${slugify(groupName)}`,
 			icon: 'fa-users',

@@ -20,27 +20,13 @@ module.exports = {
 		await mkdirp(folder);
 		const userPicRegex = /^\d+-profile/;
 
-		const dir = await fs.promises.opendir(folder);
+		const files = (await fs.promises.readdir(folder, { withFileTypes: true }))
+			.filter(item => !item.isDirectory() && String(item.name).match(userPicRegex))
+			.map(item => item.name);
 
-		let batchBuffer = [];
-		const BATCH_SIZE = 500;
-
-		for await (const entry of dir) {
-			if (!entry.isDirectory() && userPicRegex.test(entry.name)) {
-				batchBuffer.push(entry.name);
-			}
-			if (batchBuffer.length >= BATCH_SIZE) {
-				await processBatch(batchBuffer);
-				progress.incr(batchBuffer.length);
-				batchBuffer = [];
-			}
-		}
-		if (batchBuffer.length > 0) {
-			await processBatch(batchBuffer);
-			progress.incr(batchBuffer.length);
-		}
-
-		async function processBatch(files) {
+		progress.total = files.length;
+		await batch.processArray(files, async (files) => {
+			progress.incr(files.length);
 			await Promise.all(files.map(async (file) => {
 				const uid = file.split('-')[0];
 				if (parseInt(uid, 10) > 0) {
@@ -51,7 +37,9 @@ module.exports = {
 					);
 				}
 			}));
-		}
+		}, {
+			batch: 500,
+		});
 
 		await batch.processSortedSet('users:joindate', async (uids) => {
 			progress.incr(uids.length);

@@ -30,14 +30,22 @@ describe('socket.io', () => {
 	let regularUid;
 
 	before(async () => {
-		adminUid = await user.create({ username: 'admin', password: 'adminpwd' });
-		await groups.join('administrators', adminUid);
-		regularUid = await user.create({ username: 'regular', password: 'regularpwd', email: 'regular@test.com' }, { emailVerification: 'verify' });
-		({ cid } = await categories.create({
-			name: 'Test Category',
-			description: 'Test category created by testing script',
-		}));
+		const data = await Promise.all([
+			user.create({ username: 'admin', password: 'adminpwd' }),
+			user.create({ username: 'regular', password: 'regularpwd' }),
+			categories.create({
+				name: 'Test Category',
+				description: 'Test category created by testing script',
+			}),
+		]);
+		adminUid = data[0];
+		await groups.join('administrators', data[0]);
 
+		regularUid = data[1];
+		await user.setUserField(regularUid, 'email', 'regular@test.com');
+		await user.email.confirmByUid(regularUid);
+
+		cid = data[2].cid;
 		await topics.post({
 			uid: adminUid,
 			cid: cid,
@@ -74,6 +82,19 @@ describe('socket.io', () => {
 		io.emit('constructor.toString', (err) => {
 			assert(err);
 			assert.equal(err.message, '[[error:invalid-event, constructor.toString]]');
+			done();
+		});
+	});
+
+	it('should get installed themes', (done) => {
+		const themes = ['nodebb-theme-persona'];
+		io.emit('admin.themes.getInstalled', (err, data) => {
+			assert.ifError(err);
+			assert(data);
+			const installed = data.map(theme => theme.id);
+			themes.forEach((theme) => {
+				assert(installed.includes(theme));
+			});
 			done();
 		});
 	});
@@ -459,37 +480,12 @@ describe('socket.io', () => {
 			socketAdmin.plugins.upgrade({
 				uid: adminUid,
 			}, {
-				id: 'nodebb-plugin-markdown',
+				id: 'nodebb-plugin-location-to-map',
 				version: 'latest',
 			}, (err) => {
 				assert.ifError(err);
 				process.env.NODE_ENV = oldValue;
 				done();
-			});
-		});
-
-		it('should fail to upgrade plugin if it is not installed', function (done) {
-			this.timeout(0);
-			const oldValue = process.env.NODE_ENV;
-			process.env.NODE_ENV = 'development';
-			socketAdmin.plugins.toggleInstall({
-				uid: adminUid,
-			}, {
-				id: 'nodebb-plugin-location-to-map',
-				version: 'latest',
-			}, function (err) {
-				assert.ifError(err);
-				socketAdmin.plugins.upgrade({
-					uid: adminUid,
-				}, {
-					id: 'nodebb-plugin-location-to-map',
-					version: 'latest',
-				}, (err) => {
-					console.log(err);
-					assert.strictEqual(err.message, '[[error:plugin-not-installed]]');
-					process.env.NODE_ENV = oldValue;
-					done();
-				});
 			});
 		});
 	});

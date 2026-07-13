@@ -1,7 +1,7 @@
 'use strict';
 
 module.exports = function (module) {
-	const dbHelpers = require('../helpers');
+	const helpers = require('./helpers');
 	module.flushdb = async function () {
 		await module.client.dropDatabase();
 	};
@@ -24,8 +24,12 @@ module.exports = function (module) {
 				_key: { $in: key },
 			}, { _id: 0, _key: 1 }).toArray();
 
-			const foundKeys = new Set(data.map(item => item._key));
-			return key.map(key => foundKeys.has(key));
+			const map = Object.create(null);
+			data.forEach((item) => {
+				map[item._key] = true;
+			});
+
+			return key.map(key => !!map[key]);
 		}
 
 		const item = await module.client.collection('objects').findOne({
@@ -35,20 +39,10 @@ module.exports = function (module) {
 	};
 
 	module.scan = async function (params) {
-		const match = dbHelpers.globToRegex(params.match);
-		const cursor = await module.client.collection('objects').find({
-			_key: { $regex: new RegExp(match) },
-		}, {
-			projection: { _id: 0, _key: 1 },
-		}).batchSize(params.batch || 1000);
-		const found = new Set();
-		// eslint-disable-next-line no-await-in-loop
-		while (await cursor.hasNext()) {
-			// eslint-disable-next-line no-await-in-loop
-			const item = await cursor.next();
-			found.add(item._key);
-		}
-		return Array.from(found);
+		const match = helpers.buildMatchQuery(params.match);
+		return await module.client.collection('objects').distinct(
+			'_key', { _key: { $regex: new RegExp(match) } }
+		);
 	};
 
 	module.delete = async function (key) {
@@ -72,9 +66,7 @@ module.exports = function (module) {
 			return;
 		}
 
-		const objectData = await module.client.collection('objects').findOne(
-			{ _key: key }, { projection: { _id: 0 } }
-		);
+		const objectData = await module.client.collection('objects').findOne({ _key: key }, { projection: { _id: 0 } });
 
 		// fallback to old field name 'value' for backwards compatibility #6340
 		let value = null;
@@ -98,12 +90,12 @@ module.exports = function (module) {
 			{ projection: { _id: 0 } }
 		).toArray();
 
-		const map = Object.create(null);
+		const map = {};
 		data.forEach((d) => {
 			map[d._key] = d.data;
 		});
 
-		return keys.map(k => map[k] !== undefined ? map[k] : null);
+		return keys.map(k => (map.hasOwnProperty(k) ? map[k] : null));
 	};
 
 	module.set = async function (key, value) {

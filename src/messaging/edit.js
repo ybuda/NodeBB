@@ -4,7 +4,7 @@ const db = require('../database');
 const meta = require('../meta');
 const user = require('../user');
 const plugins = require('../plugins');
-const activitypub = require('../activitypub');
+const api = require('../api');
 const privileges = require('../privileges');
 const utils = require('../utils');
 
@@ -39,9 +39,7 @@ module.exports = function (Messaging) {
 			});
 
 			if (!isPublic && utils.isNumber(messages[0].fromuid)) {
-				setImmediate(() => {
-					activitypub.out.update.privateNote(messages[0].fromuid, messages[0]);
-				});
+				api.activitypub.update.privateNote({ uid: messages[0].fromuid }, { messageObj: messages[0] });
 			}
 		}
 
@@ -102,9 +100,6 @@ module.exports = function (Messaging) {
 	Messaging.canDelete = async (messageId, uid) => await canEditDelete(messageId, uid, 'delete');
 
 	Messaging.canPin = async (roomId, uid) => {
-		if (Array.isArray(roomId)) {
-			throw new Error('[[error:invalid-data]]');
-		}
 		const [isAdmin, isGlobalMod, inRoom, isRoomOwner] = await Promise.all([
 			user.isAdministrator(uid),
 			user.isGlobalModerator(uid),

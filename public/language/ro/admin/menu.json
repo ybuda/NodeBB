@@ -38,7 +38,7 @@
 	"settings/tags": "Tags",
 	"settings/notifications": "Notifications",
 	"settings/api": "API Access",
-	"settings/activitypub": "Federație (ActivityPub)",
+	"settings/activitypub": "Federation (ActivityPub)",
 	"settings/sounds": "Sounds",
 	"settings/social": "Social",
 	"settings/cookies": "Cookies",
@@ -47,16 +47,6 @@
 	"settings/advanced": "Advanced",
 
 	"settings.page-title": "%1 Settings",
-
-	"section-federation": "Federation",
-	"federation/general": "General",
-	"federation/content": "Content",
-	"federation/rules": "Categorization",
-	"federation/relays": "Relays",
-	"federation/pruning": "Storage",
-	"federation/safety": "Trust & Safety",
-	"federation/analytics": "Analytics",
-	"federation/errors": "Errors",
 
 	"section-appearance": "Appearance",
 	"appearance/themes": "Themes",
@@ -80,7 +70,6 @@
 	"advanced/logs": "Logs",
 	"advanced/errors": "Errors",
 	"advanced/cache": "Cache",
-	"advanced/jobs": "Jobs",
 	"development/logger": "Logger",
 	"development/info": "Info",
 

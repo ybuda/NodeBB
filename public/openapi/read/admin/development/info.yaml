@@ -33,10 +33,10 @@ get:
                               type: number
                               description: Process id
                             title:
-                              type: string
+                              type: number
                               description: Executable
                             version:
-                              type: string
+                              type: number
                               description: NodeBB version
                             memoryUsage:
                               type: object
@@ -51,23 +51,20 @@ get:
                                   type: number
                                 arrayBuffers:
                                   type: number
-                                rssReadable:
-                                  type: string
-                                heapUsedReadable:
-                                  type: string
+                                humanReadable:
+                                  type: number
                               required:
                                 - rss
                                 - heapTotal
                                 - heapUsed
                                 - external
-                                - rssReadable
-                                - heapUsedReadable
+                                - humanReadable
                             uptime:
                               type: number
                             uptimeHumanReadable:
                               type: string
                             cpuUsage:
-                              type: string
+                              type: number
                         os:
                           type: object
                           properties:

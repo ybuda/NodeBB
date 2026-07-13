@@ -83,24 +83,9 @@
 					</p>
 				</div>
 
-				<div class="mb-3">
-					<label class="form-label" for="convertPastedImageTo">[[admin/settings/uploads:convert-pasted-images-to]]</label>
-					<select id="convertPastedImageTo" class="form-select" data-field="convertPastedImageTo">
-						<option value="">[[admin/settings/uploads:convert-pasted-images-to-default]]</option>
-						<option value="image/png">[[admin/settings/uploads:convert-pasted-images-to-png]]</option>
-						<option value="image/jpeg">[[admin/settings/uploads:convert-pasted-images-to-jpeg]]</option>
-						<option value="image/webp">[[admin/settings/uploads:convert-pasted-images-to-webp]]</option>
-					</select>
-				</div>
-
 				<div class="form-check form-switch mb-3">
 					<input class="form-check-input" type="checkbox" id="allowTopicsThumbnail" data-field="allowTopicsThumbnail">
 					<label for="allowTopicsThumbnail" class="form-check-label">[[admin/settings/uploads:allow-topic-thumbnails]]</label>
-				</div>
-
-				<div class="form-check form-switch mb-3">
-					<input class="form-check-input" type="checkbox" id="showPostUploadsAsThumbnails" data-field="showPostUploadsAsThumbnails">
-					<label for="showPostUploadsAsThumbnails" class="form-check-label">[[admin/settings/uploads:show-post-uploads-as-thumbnails]]</label>
 				</div>
 
 				<div class="mb-3">
@@ -113,17 +98,6 @@
 					<input id="allowedFileExtensions" type="text" class="form-control" value="" data-field="allowedFileExtensions" data-field-type="tagsinput" />
 					<p class="form-text">
 						[[admin/settings/uploads:allowed-file-extensions-help]]
-					</p>
-					<div class="alert alert-warning text-sm alert-dismissible fade show mb-0" role="alert">
-						[[admin/settings/uploads:allowed-file-extension-warning]]
-					</div>
-				</div>
-
-				<div class="mb-3">
-					<label class="form-label" for="blockedFileExtensions">[[admin/settings/uploads:blocked-file-extensions]]</label>
-					<input id="blockedFileExtensions" type="text" class="form-control" value="" data-field="blockedFileExtensions" data-field-type="tagsinput" />
-					<p class="form-text">
-						[[admin/settings/uploads:blocked-file-extensions-help]]
 					</p>
 				</div>
 

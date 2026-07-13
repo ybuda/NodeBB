@@ -10,8 +10,8 @@
 	"filter-start": "Anfangsdatum",
 	"filter-end": "Enddatum",
 	"filter-user": "Nach Benutzer filtern",
-	"filter-user.placeholder": "Nutzername eingeben zum Filtern...",
+	"filter-user.placeholder": "Type user name to filter...",
 	"filter-group": "Nach Gruppe filtern",
-	"filter-group.placeholder": "Gruppenname eingeben zum Filtern...",
+	"filter-group.placeholder": "Type group name to filter...",
 	"filter-per-page": "Pro Seite"
 }

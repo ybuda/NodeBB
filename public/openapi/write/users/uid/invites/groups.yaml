@@ -16,13 +16,8 @@ get:
       content:
         application/json:
           schema:
-            type: object
-            properties:
-              status:
-                $ref: ../../../../components/schemas/Status.yaml#/Status
-              response:
-                type: array
-                items:
-                  type: string
+            type: array
+            items:
+              type: string
     '401':
       $ref: ../../../../components/responses/401.yaml#/401

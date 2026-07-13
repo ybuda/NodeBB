@@ -68,56 +68,32 @@ module.exports = function (module) {
 		}
 	};
 
-	module.setAddBulk = async function (data) {
-		if (!data.length) {
-			return;
-		}
-
-		const bulk = module.client.collection('objects').initializeUnorderedBulkOp();
-
-		data.forEach(([key, member]) => {
-			bulk.find({ _key: key }).upsert().updateOne({
-				$addToSet: {
-					members: helpers.valueToString(member),
-				},
-			});
-		});
-		try {
-			await bulk.execute();
-		} catch (err) {
-			if (err && err.message.includes('E11000 duplicate key error')) {
-				console.log(new Error('e11000').stack, data);
-				return await module.setAddBulk(data);
-			}
-			throw err;
-		}
-	};
-
 	module.setRemove = async function (key, value) {
-		await bulkSetRemove(key, value);
+		if (!Array.isArray(value)) {
+			value = [value];
+		}
+
+		value = value.map(v => helpers.valueToString(v));
+
+		await module.client.collection('objects').updateMany({
+			_key: Array.isArray(key) ? { $in: key } : key,
+		}, {
+			$pullAll: { members: value },
+		});
 	};
 
 	module.setsRemove = async function (keys, value) {
 		if (!Array.isArray(keys) || !keys.length) {
 			return;
 		}
-		await bulkSetRemove(keys, value);
+		value = helpers.valueToString(value);
+
+		await module.client.collection('objects').updateMany({
+			_key: { $in: keys },
+		}, {
+			$pull: { members: value },
+		});
 	};
-
-	async function bulkSetRemove(key, values) {
-		const isKeyArray = Array.isArray(key);
-		if (!key || (isKeyArray && !key.length)) return;
-
-		const filterKey = isKeyArray ? { $in: key } : key;
-		const update = Array.isArray(values) ?
-			{ $pullAll: { members: values.map(helpers.valueToString) } } :
-			{ $pull: { members: helpers.valueToString(values) } };
-
-		await module.client.collection('objects').bulkWrite([
-			{ updateMany: { filter: { _key: filterKey }, update: update } },
-			{ deleteMany: { filter: { _key: filterKey, members: [] } } },
-		], { ordered: true });
-	}
 
 	module.isSetMember = async function (key, value) {
 		if (!key) {
@@ -128,9 +104,8 @@ module.exports = function (module) {
 		const item = await module.client.collection('objects').findOne({
 			_key: key, members: value,
 		}, {
-			projection: { _id: 0, _key: 1 },
+			projection: { _id: 0, members: 0 },
 		});
-
 		return item !== null && item !== undefined;
 	};
 
@@ -138,31 +113,15 @@ module.exports = function (module) {
 		if (!key || !Array.isArray(values) || !values.length) {
 			return [];
 		}
-		const stringValues = values.map(v => helpers.valueToString(v));
+		values = values.map(v => helpers.valueToString(v));
 
-		const pipeline = [
-			{
-				$match: {
-					_key: key,
-					members: { $in: stringValues, $exists: true }, // Trigger the partial index
-				},
-			},
-			{
-				$project: {
-					_id: 0,
-					results: {
-						$map: {
-							input: stringValues,
-							as: 'val',
-							in: { $in: ['$$val', '$members'] },
-						},
-					},
-				},
-			},
-		];
-
-		const [doc] = await module.client.collection('objects').aggregate(pipeline).toArray();
-		return doc ? doc.results : values.map(() => false);
+		const result = await module.client.collection('objects').findOne({
+			_key: key,
+		}, {
+			projection: { _id: 0, _key: 0 },
+		});
+		const membersSet = new Set(result && Array.isArray(result.members) ? result.members : []);
+		return values.map(v => membersSet.has(v));
 	};
 
 	module.isMemberOfSets = async function (sets, value) {
@@ -174,11 +133,15 @@ module.exports = function (module) {
 		const result = await module.client.collection('objects').find({
 			_key: { $in: sets }, members: value,
 		}, {
-			projection: { _id: 0, _key: 1 },
+			projection: { _id: 0, members: 0 },
 		}).toArray();
 
-		const foundMembers = new Set(result.map(item => item._key));
-		return sets.map(set => foundMembers.has(set));
+		const map = {};
+		result.forEach((item) => {
+			map[item._key] = true;
+		});
+
+		return sets.map(set => !!map[set]);
 	};
 
 	module.getSetMembers = async function (key) {
@@ -189,7 +152,7 @@ module.exports = function (module) {
 		const data = await module.client.collection('objects').findOne({
 			_key: key,
 		}, {
-			projection: { _id: 0, members: 1 },
+			projection: { _id: 0, _key: 0 },
 		});
 		return data ? data.members : [];
 	};
@@ -204,7 +167,7 @@ module.exports = function (module) {
 			projection: { _id: 0 },
 		}).toArray();
 
-		const sets = Object.create(null);
+		const sets = {};
 		data.forEach((set) => {
 			sets[set._key] = set.members || [];
 		});

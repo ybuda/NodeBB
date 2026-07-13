@@ -56,7 +56,6 @@ get:
                         lastonline:
                           type: number
                         flags:
-                          type: number
                           nullable: true
                         banned:
                           type: number

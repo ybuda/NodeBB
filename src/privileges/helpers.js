@@ -4,13 +4,11 @@
 const _ = require('lodash');
 const validator = require('validator');
 
-const db = require('../database');
 const groups = require('../groups');
 const user = require('../user');
 const categories = require('../categories');
 const plugins = require('../plugins');
 const translator = require('../translator');
-const utils = require('../utils');
 
 const helpers = module.exports;
 
@@ -21,48 +19,22 @@ const uidToSystemGroup = {
 };
 
 helpers.isUsersAllowedTo = async function (privilege, uids, cid) {
-	// Remote categories inherit world pseudo-category privileges
-	if (!utils.isNumber(cid)) {
-		cid = -1;
-	}
-
-	let allowed;
-	const masked = await db.isSetMember(`cid:${cid}:privilegeMask`, privilege);
-	if (!masked) {
-		const [hasUserPrivilege, hasGroupPrivilege] = await Promise.all([
-			groups.isMembers(uids, `cid:${cid}:privileges:${privilege}`),
-			groups.isMembersOfGroupList(uids, `cid:${cid}:privileges:groups:${privilege}`),
-		]);
-		allowed = uids.map((uid, index) => hasUserPrivilege[index] || hasGroupPrivilege[index]);
-	} else {
-		allowed = uids.map(() => false);
-	}
-
-	const result = await plugins.hooks.fire('filter:privileges:isUsersAllowedTo', { allowed, privilege, uids, cid });
+	const [hasUserPrivilege, hasGroupPrivilege] = await Promise.all([
+		groups.isMembers(uids, `cid:${cid}:privileges:${privilege}`),
+		groups.isMembersOfGroupList(uids, `cid:${cid}:privileges:groups:${privilege}`),
+	]);
+	const allowed = uids.map((uid, index) => hasUserPrivilege[index] || hasGroupPrivilege[index]);
+	const result = await plugins.hooks.fire('filter:privileges:isUsersAllowedTo', { allowed: allowed, privilege: privilege, uids: uids, cid: cid });
 	return result.allowed;
 };
 
 helpers.isAllowedTo = async function (privilege, uidOrGroupName, cid) {
-	const _cid = cid; // original passed-in cid needed for privilege mask checks
-
-	// Remote categories (non-numeric) inherit world privileges
-	if (Array.isArray(cid)) {
-		cid = cid.map(cid => (utils.isNumber(cid) ? cid : -1));
-	} else {
-		cid = utils.isNumber(cid) ? cid : -1;
-	}
-
 	let allowed;
 	if (Array.isArray(privilege) && !Array.isArray(cid)) {
-		const mask = await db.isSetMembers(`cid:${_cid}:privilegeMask`, privilege);
 		allowed = await isAllowedToPrivileges(privilege, uidOrGroupName, cid);
-		allowed = allowed.map((allowed, idx) => mask[idx] ? false : allowed);
 	} else if (Array.isArray(cid) && !Array.isArray(privilege)) {
-		const mask = await db.isMemberOfSets(_cid.map(cid => `cid:${cid}:privilegeMask`), privilege);
 		allowed = await isAllowedToCids(privilege, uidOrGroupName, cid);
-		allowed = allowed.map((allowed, idx) => mask[idx] ? false : allowed);
 	}
-
 	if (allowed) {
 		({ allowed } = await plugins.hooks.fire('filter:privileges:isAllowedTo', { allowed: allowed, privilege: privilege, uid: uidOrGroupName, cid: cid }));
 		return allowed;
@@ -78,7 +50,7 @@ async function isAllowedToCids(privilege, uidOrGroupName, cids) {
 	const groupKeys = cids.map(cid => `cid:${cid}:privileges:groups:${privilege}`);
 
 	// Group handling
-	if (!utils.isNumber(uidOrGroupName) && (uidOrGroupName || '').length) {
+	if (isNaN(parseInt(uidOrGroupName, 10)) && (uidOrGroupName || '').length) {
 		return await checkIfAllowedGroup(uidOrGroupName, groupKeys);
 	}
 
@@ -158,7 +130,7 @@ helpers.getUserPrivileges = async function (cid, userPrivileges) {
 helpers.getGroupPrivileges = async function (cid, groupPrivileges) {
 	const [memberSets, allGroupNames] = await Promise.all([
 		groups.getMembersOfGroups(groupPrivileges.map(privilege => `cid:${cid}:privileges:${privilege}`)),
-		groups.getAllGroupNames('groups:createtime'),
+		groups.getGroups('groups:createtime', 0, -1),
 	]);
 
 	const uniqueGroups = _.uniq(_.flatten(memberSets));

@@ -15,4 +15,4 @@ get:
       content:
         application/json:
           schema:
-            $ref: ../../../components/schemas/PostObject.yaml#/PostObject
+            $ref: ../../../components/schemas/PostsObject.yaml#/PostsObject

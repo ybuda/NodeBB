@@ -1,5 +1,6 @@
 'use strict';
 
+const cronJob = require('cron').CronJob;
 const winston = require('winston');
 const nconf = require('nconf');
 const util = require('util');
@@ -11,7 +12,6 @@ const db = require('./database');
 const utils = require('./utils');
 const plugins = require('./plugins');
 const pubsub = require('./pubsub');
-const cron = require('./cron');
 
 const Analytics = module.exports;
 
@@ -21,7 +21,6 @@ let local = {
 	pageViewsRegistered: 0,
 	pageViewsGuest: 0,
 	pageViewsBot: 0,
-	apPageViews: 0,
 	uniquevisitors: 0,
 };
 const empty = _.cloneDeep(local);
@@ -32,38 +31,25 @@ const runJobs = nconf.get('runJobs');
 Analytics.pause = false;
 
 Analytics.init = async function () {
-	await cron.addJob({
-		name: 'analytics:publish',
-		cronTime: '*/10 * * * * *',
-		runOnAllNodes: true,
-		onTick: async () => {
-			if (Analytics.pause) return;
-			await Analytics.writeLocalData();
-		},
-	});
+	new cronJob('*/10 * * * * *', (async () => {
+		if (Analytics.pause) return;
+		publishLocalAnalytics();
+		if (runJobs) {
+			await sleep(2000);
+			await Analytics.writeData();
+		}
+	}), null, true);
 
 	if (runJobs) {
-		await cron.addJob({
-			name: 'prune:ip:recent',
-			cronTime: '*/30 * * * *',
-			onTick: async () => {
-				await db.sortedSetsRemoveRangeByScore(['ip:recent'], '-inf', Date.now() - 172800000);
-			},
-		});
+		new cronJob('*/30 * * * *', (async () => {
+			await db.sortedSetsRemoveRangeByScore(['ip:recent'], '-inf', Date.now() - 172800000);
+		}), null, true);
 	}
 
 	if (runJobs) {
 		pubsub.on('analytics:publish', (data) => {
 			incrementProperties(total, data.local);
 		});
-	}
-};
-
-Analytics.writeLocalData = async function () {
-	publishLocalAnalytics();
-	if (runJobs) {
-		await sleep(2000);
-		await Analytics.writeData();
 	}
 };
 
@@ -115,17 +101,8 @@ Analytics.pageView = async function (payload) {
 		local.pageViewsGuest += 1;
 	}
 
-	await incrementUniqueVisitors(payload.ip);
-};
-
-Analytics.apPageView = async function ({ ip }) {
-	local.apPageViews += 1;
-	await incrementUniqueVisitors(ip);
-};
-
-async function incrementUniqueVisitors(ip) {
-	if (ip) {
-		const score = await db.sortedSetScore('ip:recent', ip);
+	if (payload.ip) {
+		const score = await db.sortedSetScore('ip:recent', payload.ip);
 		let record = !score;
 		if (score) {
 			const today = new Date();
@@ -135,10 +112,10 @@ async function incrementUniqueVisitors(ip) {
 
 		if (record) {
 			local.uniquevisitors += 1;
-			await db.sortedSetAdd('ip:recent', Date.now(), ip);
+			await db.sortedSetAdd('ip:recent', Date.now(), payload.ip);
 		}
 	}
-}
+};
 
 Analytics.writeData = async function () {
 	const today = new Date();
@@ -183,18 +160,6 @@ Analytics.writeData = async function () {
 		incrByBulk.push(['analytics:pageviews:bot', total.pageViewsBot, today.getTime()]);
 		incrByBulk.push(['analytics:pageviews:month:bot', total.pageViewsBot, month.getTime()]);
 		total.pageViewsBot = 0;
-	}
-
-	if (total.apPageViews > 0) {
-		incrByBulk.push(['analytics:pageviews:ap', total.apPageViews, today.getTime()]);
-		incrByBulk.push(['analytics:pageviews:ap:month', total.apPageViews, month.getTime()]);
-		total.apPageViews = 0;
-		if (!metrics.includes('pageviews:ap')) {
-			metrics.push('pageviews:ap');
-		}
-		if (!metrics.includes('pageviews:ap:month')) {
-			metrics.push('pageviews:ap:month');
-		}
 	}
 
 	if (total.uniquevisitors > 0) {

@@ -9,6 +9,7 @@ const groups = require('../../groups');
 const meta = require('../../meta');
 const pagination = require('../../pagination');
 const events = require('../../events');
+const slugify = require('../../slugify');
 
 const groupsController = module.exports;
 
@@ -22,7 +23,7 @@ groupsController.list = async function (req, res) {
 	const stop = start + groupsPerPage - 1;
 	groupNames = groupNames.slice(start, stop + 1);
 
-	const groupData = await groups.getGroupsData(groupNames.map(g => g.name));
+	const groupData = await groups.getGroupsData(groupNames);
 	res.render('admin/manage/groups', {
 		groups: groupData,
 		pagination: pagination.create(page, pageCount),
@@ -31,16 +32,8 @@ groupsController.list = async function (req, res) {
 };
 
 groupsController.get = async function (req, res, next) {
-	const lowercaseSlug = req.params.slug.toLowerCase();
-	if (req.params.slug !== lowercaseSlug) {
-		if (res.locals.isAPI) {
-			req.params.slug = lowercaseSlug;
-		} else {
-			return res.redirect(`${nconf.get('relative_path')}/admin/manage/groups/${lowercaseSlug}`);
-		}
-	}
-
-	const groupName = await groups.getGroupNameByGroupSlug(req.params.slug);
+	const slug = slugify(req.params.name);
+	const groupName = await groups.getGroupNameByGroupSlug(slug);
 	if (!groupName) {
 		return next();
 	}
@@ -53,11 +46,10 @@ groupsController.get = async function (req, res, next) {
 		return next();
 	}
 
-	const groupNameData = groupNames.map(g => ({
-		encodedName: encodeURIComponent(g.name),
-		displayName: validator.escape(String(g.name)),
-		slug: g.slug,
-		selected: g.name === groupName,
+	const groupNameData = groupNames.map(name => ({
+		encodedName: encodeURIComponent(name),
+		displayName: validator.escape(String(name)),
+		selected: name === groupName,
 	}));
 
 	res.render('admin/manage/group', {
@@ -70,14 +62,13 @@ groupsController.get = async function (req, res, next) {
 };
 
 async function getGroupNames() {
-	let groupEntries = Object.entries(await db.getObject('groupslug:groupname'));
-	groupEntries = groupEntries.map(g => ({ slug: g[0], name: g[1] }));
-	return groupEntries.filter(g => (
-		g.name !== 'registered-users' &&
-		g.name !== 'verified-users' &&
-		g.name !== 'unverified-users' &&
-		g.name !== groups.BANNED_USERS
-	)).sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+	const groupNames = Object.values(await db.getObject('groupslug:groupname'));
+	return groupNames.filter(name => (
+		name !== 'registered-users' &&
+		name !== 'verified-users' &&
+		name !== 'unverified-users' &&
+		name !== groups.BANNED_USERS
+	)).sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 }
 
 groupsController.getCSV = async function (req, res) {

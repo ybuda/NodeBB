@@ -4,7 +4,6 @@ const plugins = require('../plugins');
 const slugify = require('../slugify');
 const db = require('../database');
 const batch = require('../batch');
-const cache = require('../cache');
 
 module.exports = function (Groups) {
 	Groups.destroy = async function (groupNames) {
@@ -45,7 +44,6 @@ module.exports = function (Groups) {
 			removeGroupsFromPrivilegeGroups(groupNames),
 		]);
 		Groups.cache.reset();
-		cache.del(`zset:groups:createtime`);
 		plugins.hooks.fire('action:groups.destroy', { groups: groupsData });
 	};
 

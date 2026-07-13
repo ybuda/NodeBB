@@ -1,32 +1,19 @@
 'use strict';
 
 const db = require('../database');
-const user = require('../user');
 const meta = require('../meta');
 const activitypub = require('../activitypub');
-const analytics = require('../analytics');
-const helpers = require('./helpers');
 
 const middleware = module.exports;
 
 middleware.enabled = async (req, res, next) => next(!meta.config.activitypubEnabled ? 'route' : undefined);
 
-middleware.pageview = async (req, res, next) => {
-	await analytics.apPageView({ ip: req.ip });
-	next();
-};
-
 middleware.assertS2S = async function (req, res, next) {
 	// For whatever reason, express accepts does not recognize "profile" as a valid differentiator
 	// Therefore, manual header parsing is used here.
-	let { accept, 'content-type': contentType } = req.headers;
+	const { accept, 'content-type': contentType } = req.headers;
 	if (!(accept || contentType)) {
 		return next('route');
-	}
-
-	// Normalize content-type
-	if (contentType) {
-		contentType = contentType.trim().replace(/\s*;\s*/g, ';'); // spec allows spaces around semi-colon
 	}
 
 	const pass = activitypub.helpers.assertAccept(accept) ||
@@ -41,39 +28,32 @@ middleware.assertS2S = async function (req, res, next) {
 
 middleware.verify = async function (req, res, next) {
 	// Verifies the HTTP Signature if present (required for POST)
-	if (req.headers.hasOwnProperty('signature')) {
-		const verified = await activitypub.verify(req);
-		if (!verified) {
-			activitypub.helpers.log('[middleware/activitypub] HTTP signature verification failed.');
-			return res.sendStatus(400);
-		}
+	const passthrough = [/\/actor/, /\/uid\/\d+/];
+	if (req.method === 'GET' && passthrough.some(regex => regex.test(req.path))) {
+		return next();
+	}
 
-		// Set calling user
+	const verified = await activitypub.verify(req);
+	if (!verified && req.method === 'POST') {
+		activitypub.helpers.log('[middleware/activitypub] HTTP signature verification failed.');
+		return res.sendStatus(400);
+	}
+
+	// Set calling user
+	if (req.headers.signature) {
 		const keyId = req.headers.signature.split(',').filter(line => line.startsWith('keyId="'));
 		if (keyId.length) {
 			req.uid = keyId.shift().slice(7, -1).replace(/#.*$/, '');
 		}
-
-		activitypub.helpers.log('[middleware/activitypub] HTTP signature verification passed.');
-	} else if (req.method === 'POST') {
-		// HTTP Signatures are mandatory for POST (ActivityPub S2S spec)
-		activitypub.helpers.log('[middleware/activitypub] HTTP signature required for POST but not present.');
-		return res.sendStatus(401);
-	} else {
-		activitypub.helpers.log('[middleware/activitypub] HTTP signature verification skipped (GET).');
 	}
+
+	activitypub.helpers.log('[middleware/activitypub] HTTP signature verification passed.');
 	next();
 };
 
-middleware.assertPayload = helpers.try(async function (req, res, next) {
+middleware.assertPayload = async function (req, res, next) {
 	// Checks the validity of the incoming payload against the sender and rejects on failure
 	activitypub.helpers.log('[middleware/activitypub] Validating incoming payload...');
-
-	// Reject from banned users
-	const isBanned = await user.bans.isBanned(req.uid);
-	if (isBanned) {
-		return res.sendStatus(403);
-	}
 
 	// Sanity-check payload schema
 	const required = ['id', 'type', 'actor', 'object'];
@@ -104,13 +84,12 @@ middleware.assertPayload = helpers.try(async function (req, res, next) {
 
 	// Domain check
 	const { hostname } = new URL(actor);
-	const result = await activitypub.instances.isAllowed(hostname);
-	activitypub.instances.log(hostname);
-
-	if (!result.allowed) {
+	const allowed = await activitypub.instances.isAllowed(hostname);
+	if (!allowed) {
 		activitypub.helpers.log(`[middleware/activitypub] Blocked incoming activity from ${hostname}.`);
 		return res.sendStatus(403);
 	}
+	await db.sortedSetAdd('instances:lastSeen', Date.now(), hostname);
 
 	// Origin checking
 	if (typeof object !== 'string' && object.hasOwnProperty('id')) {
@@ -126,11 +105,7 @@ middleware.assertPayload = helpers.try(async function (req, res, next) {
 
 	// Cross-check key ownership against received actor
 	await activitypub.actors.assert(actor);
-	let compare = await db.getObjectsFields([
-		`userRemote:${actor}:keys`, `categoryRemote:${actor}:keys`,
-	], ['id']);
-	compare = compare.reduce((keyId, { id }) => keyId || id || '', '').replace(/#[\w-]+$/, '');
-
+	const compare = ((await db.getObjectField(`userRemote:${actor}:keys`, 'id')) || '').replace(/#[\w-]+$/, '');
 	const { signature } = req.headers;
 	let keyId = new Map(signature.split(',').filter(Boolean).map((v) => {
 		const index = v.indexOf('=');
@@ -144,7 +119,7 @@ middleware.assertPayload = helpers.try(async function (req, res, next) {
 	activitypub.helpers.log('[middleware/activitypub] Key ownership cross-check passed.');
 
 	next();
-});
+};
 
 middleware.resolveObjects = async function (req, res, next) {
 	const { type, object } = req.body;

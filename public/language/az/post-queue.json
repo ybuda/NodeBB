@@ -10,8 +10,6 @@
 	"user": "İstifadəçi",
 	"when": "Nə zaman",
 	"category": "Kateqoriya",
-	"crosspost-to": "Crosspost to",
-	"tags": "Tags",
 	"title": "Başlıq",
 	"content": "Məzmun",
 	"posted": "Dərc olunub",
@@ -21,7 +19,6 @@
 	"title-editable": "Redaktə etmək üçün başlığa klikləyin",
 	"reply": "Cavab ver",
 	"topic": "Mövzu",
-	"crosspost": "Crosspost",
 	"accept": "Qəbul et",
 	"reject": "Rədd et",
 	"remove": "Sil",
@@ -42,6 +39,5 @@
 	"remove-selected-confirm": "Seçilmiş %1 yazını silmək istəyirsiniz?",
 	"bulk-accept-success": "%1 yazı qəbul edildi",
 	"bulk-reject-success": "%1 yazı rədd edildi",
-	"links-in-this-post": "Bu yazıdakı linklər",
-	"thumbs-in-this-post": "Thumbnails in this post"
+	"links-in-this-post": "Bu yazıdakı linklər"
 }

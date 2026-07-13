@@ -31,6 +31,7 @@ module.exports = function (Categories) {
 			name: data.name,
 			handle,
 			description: data.description ? data.description : '',
+			descriptionParsed: data.descriptionParsed ? data.descriptionParsed : '',
 			icon: data.icon ? data.icon : '',
 			bgColor: data.bgColor || colours[0],
 			color: data.color || colours[1],
@@ -58,7 +59,6 @@ module.exports = function (Categories) {
 			'groups:topics:read',
 			'groups:topics:create',
 			'groups:topics:reply',
-			'groups:topics:crosspost',
 			'groups:topics:tag',
 			'groups:posts:edit',
 			'groups:posts:history',
@@ -84,6 +84,9 @@ module.exports = function (Categories) {
 		category = result.category;
 
 		await db.setObject(`category:${category.cid}`, category);
+		if (!category.descriptionParsed) {
+			await Categories.parseDescription(category.cid, category.description);
+		}
 
 		await db.sortedSetAddBulk([
 			['categories:cid', category.order, category.cid],
@@ -97,7 +100,7 @@ module.exports = function (Categories) {
 		await privileges.categories.give(result.guestPrivileges, category.cid, ['guests', 'spiders']);
 
 		cache.del('categories:cid');
-		await Categories.clearParentCategoryCache(parentCid);
+		await clearParentCategoryCache(parentCid);
 
 		if (data.cloneFromCid && parseInt(data.cloneFromCid, 10)) {
 			category = await Categories.copySettingsFrom(data.cloneFromCid, category.cid, !data.parentCid);
@@ -111,8 +114,8 @@ module.exports = function (Categories) {
 		return category;
 	};
 
-	Categories.clearParentCategoryCache = async function (parentCid) {
-		while (parentCid || parseInt(parentCid, 10) === 0) {
+	async function clearParentCategoryCache(parentCid) {
+		while (parseInt(parentCid, 10) >= 0) {
 			cache.del([
 				`cid:${parentCid}:children`,
 				`cid:${parentCid}:children:all`,
@@ -125,7 +128,7 @@ module.exports = function (Categories) {
 			// eslint-disable-next-line no-await-in-loop
 			parentCid = await Categories.getCategoryField(parentCid, 'parentCid');
 		}
-	};
+	}
 
 	async function duplicateCategoriesChildren(parentCid, cid, uid) {
 		let children = await Categories.getChildren([cid], uid);
@@ -148,15 +151,7 @@ module.exports = function (Categories) {
 	}
 
 	async function generateHandle(slug) {
-		let taken;
-		try {
-			taken = await meta.slugTaken(slug);
-		} catch (e) {
-			// invalid slug passed in
-			slug = 'category';
-			taken = true;
-		}
-
+		let taken = await meta.slugTaken(slug);
 		let suffix;
 		while (taken) {
 			suffix = utils.generateUUID().slice(0, 8);
@@ -184,13 +179,17 @@ module.exports = function (Categories) {
 			throw new Error('[[error:invalid-cid]]');
 		}
 
-		const oldParent = String(destination.parentCid || 0);
-		const newParent = String(source.parentCid || 0);
-		if (copyParent && newParent !== String(toCid)) {
+		const oldParent = parseInt(destination.parentCid, 10) || 0;
+		const newParent = parseInt(source.parentCid, 10) || 0;
+		if (copyParent && newParent !== parseInt(toCid, 10)) {
 			await db.sortedSetRemove(`cid:${oldParent}:children`, toCid);
 			await db.sortedSetAdd(`cid:${newParent}:children`, source.order, toCid);
-			await Categories.clearParentCategoryCache(oldParent);
-			await Categories.clearParentCategoryCache(newParent);
+			cache.del([
+				`cid:${oldParent}:children`,
+				`cid:${oldParent}:children:all`,
+				`cid:${newParent}:children`,
+				`cid:${newParent}:children:all`,
+			]);
 		}
 
 		destination.description = source.description;

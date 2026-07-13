@@ -15,7 +15,7 @@
 			<div class="card">
 				<div class="card-body">
 					<div class="position-relative" style="aspect-ratio: 2;">
-						<canvas id="pageviews:hourly" height="250"></canvas>
+						<canvas id="pageviews:hourly"></canvas>
 					</div>
 				</div>
 				<div class="card-footer"><small>[[admin/manage/categories:analytics.pageviews-hourly]]</div>

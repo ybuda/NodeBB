@@ -1,8 +1,5 @@
 'use strict';
 
-const nconf = require('nconf');
-
-const db = require('../../database');
 const user = require('../../user');
 const plugins = require('../../plugins');
 
@@ -13,7 +10,7 @@ module.exports = function (SocketUser) {
 		}
 		await user.isAdminOrSelf(socket.uid, data.uid);
 		// 'keepAllUserImages' is ignored, since there is explicit user intent
-		const userData = await user.removeProfileImage(data.uid, data.picture);
+		const userData = await user.removeProfileImage(data.uid);
 		plugins.hooks.fire('action:user.removeUploadedPicture', {
 			callerUid: socket.uid,
 			uid: data.uid,
@@ -26,29 +23,27 @@ module.exports = function (SocketUser) {
 			throw new Error('[[error:invalid-data]]');
 		}
 
-		const [list, userObj, userPictures] = await Promise.all([
+		const [list, userObj] = await Promise.all([
 			plugins.hooks.fire('filter:user.listPictures', {
 				uid: data.uid,
 				pictures: [],
 			}),
 			user.getUserData(data.uid),
-			db.getSortedSetRevRange(`uid:${data.uid}:profile:pictures`, 0, 2),
 		]);
 
-		userPictures.forEach((picture) => {
+		if (userObj.uploadedpicture) {
 			list.pictures.push({
 				type: 'uploaded',
-				url: picture.startsWith('http') ? picture : `${nconf.get('relative_path')}${picture}`,
+				url: userObj.uploadedpicture,
 				text: '[[user:uploaded-picture]]',
 			});
-		});
+		}
 
 		// Normalize list into "user object" format
 		list.pictures = list.pictures.map(({ type, url, text }) => ({
 			type,
 			username: text,
-			picture: String(url),
-			selected: url === String(userObj.picture),
+			picture: url,
 		}));
 
 		list.pictures.unshift({
@@ -56,7 +51,6 @@ module.exports = function (SocketUser) {
 			'icon:text': userObj['icon:text'],
 			'icon:bgColor': userObj['icon:bgColor'],
 			username: '[[user:default-picture]]',
-			selected: !userObj.picture,
 		});
 
 		return list.pictures;

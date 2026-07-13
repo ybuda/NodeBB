@@ -15,7 +15,7 @@ const usersController = module.exports;
 
 const userFields = [
 	'uid', 'username', 'userslug', 'email', 'postcount', 'joindate', 'banned',
-	'muted', 'mutedUntil', 'reputation', 'picture', 'flags', 'lastonline', 'email:confirmed',
+	'reputation', 'picture', 'flags', 'lastonline', 'email:confirmed',
 ];
 
 usersController.index = async function (req, res) {
@@ -62,9 +62,6 @@ async function getUsers(req, res) {
 		if (filterBy.includes('banned')) {
 			set.push('users:banned');
 		}
-		if (filterBy.includes('muted')) {
-			set.push('users:muted');
-		}
 		if (!set.length) {
 			set.push('users:online');
 			sortBy = 'lastonline';
@@ -80,7 +77,7 @@ async function getUsers(req, res) {
 	}
 
 	async function getUids(set) {
-		let uids;
+		let uids = [];
 		if (Array.isArray(set)) {
 			const weights = set.map((s, index) => (index ? 0 : 1));
 			uids = await db[reverse ? 'getSortedSetRevIntersect' : 'getSortedSetIntersect']({
@@ -104,7 +101,7 @@ async function getUsers(req, res) {
 	]);
 
 	await render(req, res, {
-		users: users.filter(user => user && user.userslug),
+		users: users.filter(user => user && parseInt(user.uid, 10)),
 		page: page,
 		pageCount: Math.max(1, Math.ceil(count / resultsPerPage)),
 		resultsPerPage: resultsPerPage,
@@ -316,9 +313,4 @@ usersController.customFields = async function (req, res) {
 		field.visibility = field.visibility || 'all';
 	});
 	res.render('admin/manage/users/custom-fields', { fields: fields });
-};
-
-usersController.banReasons = async function (req, res) {
-	const reasons = await user.bans.getCustomReasons();
-	res.render('admin/manage/users/custom-reasons', { reasons });
 };

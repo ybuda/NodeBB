@@ -12,8 +12,6 @@ const meta = require('../../meta');
 const activitypub = require('../../activitypub');
 const helpers = require('../helpers');
 const pagination = require('../../pagination');
-const utils = require('../../utils');
-const cache = require('../../cache');
 
 const categoriesController = module.exports;
 
@@ -21,7 +19,7 @@ categoriesController.get = async function (req, res, next) {
 	const [categoryData, parent, selectedData] = await Promise.all([
 		categories.getCategories([req.params.category_id]),
 		categories.getParents([req.params.category_id]),
-		helpers.getSelectedCategory(req.params.category_id, req.uid),
+		helpers.getSelectedCategory(req.params.category_id),
 	]);
 
 	const category = categoryData[0];
@@ -50,14 +48,14 @@ categoriesController.get = async function (req, res, next) {
 
 categoriesController.getAll = async function (req, res) {
 	const rootCid = parseInt(req.query.cid, 10) || 0;
-	const rootChildren = await categories.getAllCidsFromSet(`cid:${rootCid}:children`);
 	async function getRootAndChildren() {
-		const childCids = _.flatten(await Promise.all(rootChildren.map(categories.getChildrenCids)));
+		const rootChildren = await categories.getAllCidsFromSet(`cid:${rootCid}:children`);
+		const childCids = _.flatten(await Promise.all(rootChildren.map(cid => categories.getChildrenCids(cid))));
 		return [rootCid].concat(rootChildren.concat(childCids));
 	}
 
 	// Categories list will be rendered on client side with recursion, etc.
-	const cids = await getRootAndChildren();
+	const cids = await (rootCid ? getRootAndChildren() : categories.getAllCidsFromSet('categories:cid'));
 
 	let rootParent = 0;
 	if (rootCid) {
@@ -65,19 +63,13 @@ categoriesController.getAll = async function (req, res) {
 	}
 
 	const fields = [
-		'cid', 'name', 'nickname', 'icon', 'parentCid', 'disabled', 'link',
+		'cid', 'name', 'icon', 'parentCid', 'disabled', 'link',
 		'order', 'color', 'bgColor', 'backgroundImage', 'imageClass',
-		'subCategoriesPerPage', 'description', 'descriptionParsed',
+		'subCategoriesPerPage', 'description',
 	];
-	let categoriesData = await categories.getCategoriesFields(cids, fields);
-	({ categories: categoriesData } = await plugins.hooks.fire('filter:admin.categories.get', { categories: categoriesData, fields: fields }));
-
-	categoriesData = categoriesData.map((category) => {
-		category.isLocal = utils.isNumber(category.cid);
-		return category;
-	});
-
-	let tree = categories.getTree(categoriesData, rootParent);
+	const categoriesData = await categories.getCategoriesFields(cids, fields);
+	const result = await plugins.hooks.fire('filter:admin.categories.get', { categories: categoriesData, fields: fields });
+	let tree = categories.getTree(result.categories, rootParent);
 	const cidsCount = rootCid && tree[0] ? tree[0].children.length : tree.length;
 
 	const pageCount = Math.max(1, Math.ceil(cidsCount / meta.config.categoriesPerPage));
@@ -145,25 +137,26 @@ async function buildBreadcrumbs(categoryData, url) {
 categoriesController.buildBreadCrumbs = buildBreadcrumbs;
 
 categoriesController.getAnalytics = async function (req, res) {
-	const [analyticsData, { selectedCategory }] = await Promise.all([
+	const [name, analyticsData, selectedData] = await Promise.all([
+		categories.getCategoryField(req.params.category_id, 'name'),
 		analytics.getCategoryAnalytics(req.params.category_id),
-		helpers.getSelectedCategory(req.params.category_id, req.uid),
+		helpers.getSelectedCategory(req.params.category_id),
 	]);
-
 	res.render('admin/manage/category-analytics', {
-		name: selectedCategory?.name || '',
+		name: name,
 		analytics: analyticsData,
-		selectedCategory: selectedCategory,
+		selectedCategory: selectedData.selectedCategory,
 	});
 };
 
 categoriesController.getFederation = async function (req, res) {
-	const cid = parseInt(req.params.category_id, 10);
-	let [_following, pending, followers, { selectedCategory }] = await Promise.all([
+	const cid = req.params.category_id;
+	let [_following, pending, followers, name, { selectedCategory }] = await Promise.all([
 		db.getSortedSetMembers(`cid:${cid}:following`),
 		db.getSortedSetMembers(`followRequests:cid.${cid}`),
 		activitypub.notes.getCategoryFollowers(cid),
-		helpers.getSelectedCategory(cid, req.uid),
+		categories.getCategoryField(cid, 'name'),
+		helpers.getSelectedCategory(cid),
 	]);
 
 	const following = [..._following, ...pending].map(entry => ({
@@ -177,61 +170,9 @@ categoriesController.getFederation = async function (req, res) {
 	res.render('admin/manage/category-federation', {
 		cid: cid,
 		enabled: meta.config.activitypubEnabled,
-		name: selectedCategory?.name || '',
+		name,
 		selectedCategory,
 		following,
 		followers,
 	});
-};
-
-categoriesController.addRemote = async function (req, res) {
-	let { handle, id } = req.body;
-	if (handle && !id) {
-		({ actorUri: id } = await activitypub.helpers.query(handle));
-	}
-
-	if (!id) {
-		return res.sendStatus(404);
-	}
-
-	await activitypub.actors.assertGroup(id);
-	const exists = await categories.exists(id);
-
-	if (!exists) {
-		return res.sendStatus(404);
-	}
-
-	const lastItem = await db.getSortedSetRevRangeWithScores('cid:0:children', 0, 0);
-	const order = lastItem.length ? lastItem[0].score + 1 : 1;
-	await Promise.all([
-		db.sortedSetAdd('cid:0:children', order, id),
-		categories.setCategoryField(id, 'order', order),
-	]);
-	cache.del('cid:0:children');
-	cache.del('cid:0:children:all');
-
-	res.sendStatus(200);
-};
-
-categoriesController.renameRemote = async (req, res) => {
-	if (utils.isNumber(req.params.cid)) {
-		return helpers.formatApiResponse(400, res);
-	}
-
-	const { name } = req.body;
-	await categories.setCategoryField(req.params.cid, 'nickname', name);
-
-	res.sendStatus(200);
-};
-
-categoriesController.removeRemote = async function (req, res) {
-	if (utils.isNumber(req.params.cid)) {
-		return helpers.formatApiResponse(400, res);
-	}
-
-	const parentCid = await categories.getCategoryField(req.params.cid, 'parentCid');
-	await db.sortedSetRemove(`cid:${parentCid || 0}:children`, req.params.cid);
-	await categories.clearParentCategoryCache(parentCid || 0);
-	await categories.setCategoryField(req.params.cid, 'parentCid', 0);
-	res.sendStatus(200);
 };

@@ -10,8 +10,6 @@
 	"user": "Użytkownik",
 	"when": "Kiedy",
 	"category": "Kategoria",
-	"crosspost-to": "Crosspost to",
-	"tags": "Tagi",
 	"title": "Tytuł",
 	"content": "Zawartość",
 	"posted": "Napisano",
@@ -21,7 +19,6 @@
 	"title-editable": "Kliknij na tytuł, by edytować",
 	"reply": "Odpowiedz",
 	"topic": "Temat",
-	"crosspost": "Crosspost",
 	"accept": "Przyjmij",
 	"reject": "Odrzuć",
 	"remove": "Usuń",
@@ -42,6 +39,5 @@
 	"remove-selected-confirm": "Czy chcesz usunąć %1 wybranych postów?",
 	"bulk-accept-success": "%1 postów zaakceptowanych",
 	"bulk-reject-success": "%1 postów odrzuconych",
-	"links-in-this-post": "Odnośniki w tym wpisie",
-	"thumbs-in-this-post": "Miniaturki w tym poście"
+	"links-in-this-post": "Odnośniki w tym wpisie"
 }

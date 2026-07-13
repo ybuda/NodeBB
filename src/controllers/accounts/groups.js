@@ -15,8 +15,9 @@ groupsController.get = async function (req, res) {
 
 	const payload = res.locals.userData;
 
-	const groupsData = payload.groups.filter(Boolean);
-	const groupNames = groupsData.map(group => group.name);
+	let groupsData = await groups.getUserGroups([res.locals.uid]);
+	groupsData = groupsData[0];
+	const groupNames = groupsData.filter(Boolean).map(group => group.name);
 	const members = await groups.getMemberUsers(groupNames, 0, 3);
 	groupsData.forEach((group, index) => {
 		group.members = members[index];

@@ -24,7 +24,8 @@ module.exports = function (Posts) {
 		const groupsMap = await getGroupsMap(userData);
 
 		userData.forEach((userData, index) => {
-			userData.fullname = userSettings[index].showfullname ? userData.fullname || '' : undefined;
+			userData.signature = validator.escape(String(userData.signature || ''));
+			userData.fullname = userSettings[index].showfullname ? validator.escape(String(userData.fullname || '')) : undefined;
 			userData.selectedGroups = [];
 
 			if (meta.config.hideFullname) {
@@ -104,7 +105,7 @@ module.exports = function (Posts) {
 			'uid', 'username', 'fullname', 'userslug',
 			'reputation', 'postcount', 'topiccount', 'picture',
 			'signature', 'banned', 'banned:expire', 'status',
-			'lastonline', 'groupTitle', 'muted', 'mutedUntil',
+			'lastonline', 'groupTitle', 'mutedUntil',
 		];
 		const result = await plugins.hooks.fire('filter:posts.addUserFields', {
 			fields: fields,
@@ -149,7 +150,6 @@ module.exports = function (Posts) {
 
 		const bulkRemove = [];
 		const bulkAdd = [];
-		const bulkIncr = [];
 		let repChange = 0;
 		const postsByUser = {};
 		postData.forEach((post, i) => {
@@ -164,11 +164,6 @@ module.exports = function (Posts) {
 			if (post.votes > 0 || post.votes < 0) {
 				bulkAdd.push([`cid:${post.cid}:uid:${toUid}:pids:votes`, post.votes, post.pid]);
 			}
-
-			bulkIncr.push(
-				[`uid:${post.uid}:cids`, -1, post.cid],
-				[`uid:${toUid}:cids`, 1, post.cid],
-			);
 			postsByUser[post.uid] = postsByUser[post.uid] || [];
 			postsByUser[post.uid].push(post);
 		});
@@ -177,7 +172,6 @@ module.exports = function (Posts) {
 			db.setObjectField(pids.map(pid => `post:${pid}`), 'uid', toUid),
 			db.sortedSetRemoveBulk(bulkRemove),
 			db.sortedSetAddBulk(bulkAdd),
-			db.sortedSetIncrByBulk(bulkIncr),
 			user.incrementUserReputationBy(toUid, repChange),
 			handleMainPidOwnerChange(postData, toUid),
 			updateTopicPosters(postData, toUid),

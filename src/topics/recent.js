@@ -4,7 +4,6 @@
 const db = require('../database');
 const plugins = require('../plugins');
 const posts = require('../posts');
-const utils = require('../utils');
 
 module.exports = function (Topics) {
 	const terms = {
@@ -61,11 +60,8 @@ module.exports = function (Topics) {
 	Topics.updateLastPostTime = async function (tid, lastposttime) {
 		await Topics.setTopicField(tid, 'lastposttime', lastposttime);
 		const topicData = await Topics.getTopicFields(tid, ['cid', 'deleted', 'pinned']);
-		const crossposts = await Topics.crossposts.get(tid);
-		const crosspostCids = crossposts.map(({ cid }) => cid);
-		const keys = [topicData.cid, ...crosspostCids].map(cid => `cid:${cid}:tids:lastposttime`);
 
-		await db.sortedSetsAdd(keys, lastposttime, tid);
+		await db.sortedSetAdd(`cid:${topicData.cid}:tids:lastposttime`, lastposttime, tid);
 
 		await Topics.updateRecent(tid, lastposttime);
 
@@ -79,7 +75,7 @@ module.exports = function (Topics) {
 
 		// Topics in /world are excluded from /recent
 		const cid = await Topics.getTopicField(tid, 'cid');
-		if (!utils.isNumber(cid) || cid === -1) {
+		if (cid === -1) {
 			return await db.sortedSetRemove('topics:recent', data.tid);
 		}
 

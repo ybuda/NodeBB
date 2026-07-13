@@ -105,9 +105,8 @@ module.exports = function (User) {
 		}
 
 		const activeSids = await cleanExpiredSessions(uid);
-		activeSids.push(sessionId);
 		await db.sortedSetAdd(`uid:${uid}:sessions`, Date.now(), sessionId);
-		await revokeSessionsAboveThreshold(activeSids, uid);
+		await revokeSessionsAboveThreshold(activeSids.push(sessionId), uid);
 	};
 
 	async function revokeSessionsAboveThreshold(activeSids, uid) {

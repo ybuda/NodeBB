@@ -29,7 +29,6 @@ module.exports = function (Topics) {
 			params.tags = [params.tags];
 		}
 		data.tids = await getTids(params);
-		data.tids = await getInbox(data.tids, params);
 		data.tids = await sortTids(data.tids, params);
 		data.tids = await filterTids(data.tids.slice(0, meta.config.recentMaxTopics), params);
 		data.topicCount = data.tids.length;
@@ -43,11 +42,10 @@ module.exports = function (Topics) {
 			const result = await plugins.hooks.fire('filter:topics.getSortedTids', { params: params, tids: [] });
 			return result.tids;
 		}
-		let tids;
+		let tids = [];
 		if (params.term !== 'alltime') {
 			if (params.sort === 'posts') {
-				const { cids, uid, term, includeRemote } = params;
-				tids = await getTidsWithMostPostsInTerm({ cids, uid, term, includeRemote });
+				tids = await getTidsWithMostPostsInTerm(params.cids, params.uid, params.term);
 			} else {
 				const cids = await getCids(params.cids, params.uid);
 				tids = await Topics.getLatestTidsFromSet(
@@ -74,34 +72,6 @@ module.exports = function (Topics) {
 		return tids;
 	}
 
-	async function getInbox(tids, params) {
-		if (!params.includeRemote) {
-			return tids;
-		}
-
-		let inbox;
-		const set = params.followingOnly ? `uid:${params.uid}:inbox` : 'cid:-1:tids';
-		if (params.term !== 'alltime') {
-			const method = params.sort === 'old' ?
-				'getSortedSetRangeByScore' :
-				'getSortedSetRevRangeByScore';
-			inbox = await db[method](
-				set,
-				0,
-				1000,
-				'+inf',
-				Date.now() - Topics.getSinceFromTerm(params.term)
-			);
-		} else {
-			const method = params.sort === 'old' ?
-				'getSortedSetRange' :
-				'getSortedSetRevRange';
-			inbox = await db[method](set, 0, meta.config.recentMaxTopics - 1);
-		}
-
-		return _.uniq(tids.concat(inbox));
-	}
-
 	function sortToSet(sort) {
 		const map = {
 			recent: 'topics:recent',
@@ -117,26 +87,20 @@ module.exports = function (Topics) {
 		return 'topics:recent';
 	}
 
-	async function getCids(cids, uid, includeRemote) {
+	async function getCids(cids, uid) {
 		if (Array.isArray(cids)) {
 			cids = await privileges.categories.filterCids('topics:read', cids, uid);
 		} else {
 			cids = await categories.getCidsByPrivilege('categories:cid', uid, 'topics:read');
 			cids = cids.filter(cid => cid !== -1);
 		}
-
-		if (includeRemote) {
-			const remoteCids = await db.getObjectValues('handle:cid');
-			cids = [-1, ...cids, ...remoteCids];
-		}
 		return cids;
 	}
 
-	async function getTidsWithMostPostsInTerm({ cids, uid, term, includeRemote }) {
-		cids = await getCids(cids, uid, includeRemote);
-		const sets = cids.map(cid => `cid:${cid}:pids`);
+	async function getTidsWithMostPostsInTerm(cids, uid, term) {
+		cids = await getCids(cids, uid);
 		const pids = await db.getSortedSetRevRangeByScore(
-			sets,
+			cids.map(cid => `cid:${cid}:pids`),
 			0,
 			1000,
 			'+inf',
@@ -208,7 +172,7 @@ module.exports = function (Topics) {
 	}
 
 	async function sortTids(tids, params) {
-		if (params.term === 'alltime' && !params.cids && !params.tags.length && params.filter !== 'watched' && !params.floatPinned && !params.includeRemote) {
+		if (params.term === 'alltime' && !params.cids && !params.tags.length && params.filter !== 'watched' && !params.floatPinned) {
 			return tids;
 		}
 
@@ -279,11 +243,7 @@ module.exports = function (Topics) {
 	}
 
 	async function filterTids(tids, params) {
-		let { filter, uid, cids } = params;
-		cids = cids && cids.map(String);
-		if (cids && cids.length === 1 && cids.includes('-1')) {
-			cids = undefined;
-		}
+		const { filter, uid } = params;
 
 		if (filter === 'new') {
 			tids = await Topics.filterNewTids(tids, uid);
@@ -311,19 +271,18 @@ module.exports = function (Topics) {
 		const isCidIgnored = _.zipObject(topicCids, ignoredCids);
 		topicData = filtered;
 
+		const cids = params.cids && params.cids.map(String);
 		const { tags } = params;
 		tids = topicData.filter(t => (
 			t &&
 			t.cid &&
 			!isCidIgnored[t.cid] &&
+			(cids || parseInt(t.cid, 10) !== -1) &&
 			(!cids || cids.includes(String(t.cid))) &&
 			(!tags.length || tags.every(tag => t.tags.find(topicTag => topicTag.value === tag)))
 		)).map(t => t.tid);
 
-		const result = await plugins.hooks.fire('filter:topics.filterSortedTids', {
-			tids,
-			params,
-		});
+		const result = await plugins.hooks.fire('filter:topics.filterSortedTids', { tids: tids, params: params });
 		return result.tids;
 	}
 

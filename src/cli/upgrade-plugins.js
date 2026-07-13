@@ -148,11 +148,8 @@ async function upgradePlugins(unattended = false) {
 		if (['y', 'Y', 'yes', 'YES'].includes(result.upgrade)) {
 			console.log('\nUpgrading packages...');
 			const args = packageManagerInstallArgs.concat(found.map(suggestObj => `${suggestObj.name}@${suggestObj.suggested}`));
-			const options = { stdio: 'ignore' };
-			if (process.platform === 'win32') {
-				options.shell = true;
-			}
-			cproc.execFileSync(packageManagerExecutable, args, options);
+
+			cproc.execFileSync(packageManagerExecutable, args, { stdio: 'ignore' });
 		} else {
 			console.log(`${chalk.yellow('Package upgrades skipped')}. Check for upgrades at any time by running "${chalk.green('./nodebb upgrade -p')}".`);
 		}

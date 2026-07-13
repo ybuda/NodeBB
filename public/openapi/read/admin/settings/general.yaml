@@ -10,9 +10,6 @@ get:
           schema:
             allOf:
               - type: object
-                description: >-
-                  Most of the settings pages have their values loaded on the client-side,
-                  so the settings are not exposed server-side.
                 properties:
                   title:
                     type: string
@@ -24,5 +21,7 @@ get:
                     type: array
                   autoDetectLang:
                     type: number
-                additionalProperties: true
+                additionalProperties:
+                  type: object
+                  description: Most of the settings pages have their values loaded on the client-side, so the settings are not exposed server-side.
               - $ref: ../../../components/schemas/CommonProps.yaml#/CommonProps

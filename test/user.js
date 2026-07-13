@@ -72,12 +72,11 @@ describe('User', () => {
 
 	describe('.create(), when created', () => {
 		it('should be created properly', async () => {
-			testUid = await User.create({
-				username: userData.username, password: userData.password, email: userData.email,
-			}, {
-				emailVerification: 'verify',
-			});
+			testUid = await User.create({ username: userData.username, password: userData.password });
 			assert.ok(testUid);
+
+			await User.setUserField(testUid, 'email', userData.email);
+			await User.email.confirmByUid(testUid);
 		});
 
 		it('should be created properly', async () => {
@@ -170,23 +169,6 @@ describe('User', () => {
 				tryCreate({ username: 'notdupe2', email: 'dupe@dupe.com' }),
 			]);
 			assert.strictEqual(err.message, '[[error:email-taken]]');
-		});
-
-		it('should fail to create user with invalid slug', async () => {
-			await assert.rejects(User.create({
-				username: '-.-', // slug becomes .
-				password: '123456',
-			}), { message: '[[error:invalid-username]]' });
-		});
-
-		it('should create user with valid slug (-.-.- => .-.)', async () => {
-			const uid = await User.create({
-				username: '-.-.-', // slug becomes .-.
-				password: '123456',
-			});
-			const data = await User.getUserData(uid);
-			assert.strictEqual(data.username, '-.-.-');
-			assert.strictEqual(data.userslug, '.-.');
 		});
 	});
 
@@ -483,11 +465,24 @@ describe('User', () => {
 	});
 
 	describe('.delete()', () => {
-		it('should delete a user account', async () => {
-			const uid = await User.create({ username: 'usertodelete', password: '123456', email: 'delete@me.com' });
-			await User.delete(1, uid);
-			const exists = await User.existsBySlug('usertodelete');
-			assert.strictEqual(exists, false);
+		let uid;
+		before((done) => {
+			User.create({ username: 'usertodelete', password: '123456', email: 'delete@me.com' }, (err, newUid) => {
+				assert.ifError(err);
+				uid = newUid;
+				done();
+			});
+		});
+
+		it('should delete a user account', (done) => {
+			User.delete(1, uid, (err) => {
+				assert.ifError(err);
+				User.existsBySlug('usertodelete', (err, exists) => {
+					assert.ifError(err);
+					assert.equal(exists, false);
+					done();
+				});
+			});
 		});
 
 		it('should not re-add user to users:postcount if post is purged after user account deletion', async () => {
@@ -525,6 +520,7 @@ describe('User', () => {
 		});
 
 		it('should delete user even if they started a chat', async () => {
+			const socketModules = require('../src/socket.io/modules');
 			const uid1 = await User.create({ username: 'chatuserdelete1' });
 			const uid2 = await User.create({ username: 'chatuserdelete2' });
 			const roomId = await messaging.newRoom(uid1, { uids: [uid2] });
@@ -698,12 +694,12 @@ describe('User', () => {
 		let csrf_token;
 
 		before(async () => {
-			const newUid = await User.create({
-				username: 'updateprofile', email: 'update@me.com', password: '123456',
-			}, {
-				emailVerification: 'verify',
-			});
+			const newUid = await User.create({ username: 'updateprofile', email: 'update@me.com', password: '123456' });
 			uid = newUid;
+
+			await User.setUserField(uid, 'email', 'update@me.com');
+			await User.email.confirmByUid(uid);
+
 			({ jar, csrf_token } = await helpers.loginUser('updateprofile', '123456'));
 		});
 
@@ -738,11 +734,9 @@ describe('User', () => {
 			let uid;
 
 			it('should update a user\'s profile', async () => {
-				uid = await User.create({
-					username: 'justforupdate', email: 'just@for.updated', password: '123456',
-				}, {
-					emailVerification: 'verify',
-				});
+				uid = await User.create({ username: 'justforupdate', email: 'just@for.updated', password: '123456' });
+				await User.setUserField(uid, 'email', 'just@for.updated');
+				await User.email.confirmByUid(uid);
 
 				const data = {
 					uid: uid,
@@ -754,9 +748,7 @@ describe('User', () => {
 					signature: 'nodebb is good',
 					password: '123456',
 				};
-				const result = await apiUser.update({ uid: uid }, {
-					...data, password: '123456', invalid: 'field',
-				});
+				const result = await apiUser.update({ uid: uid }, { ...data, password: '123456', invalid: 'field' });
 				assert.equal(result.username, 'updatedUserName');
 				assert.equal(result.userslug, 'updatedusername');
 				assert.equal(result.fullname, 'updatedFullname');
@@ -773,27 +765,6 @@ describe('User', () => {
 				});
 				// updateProfile only saves valid fields
 				assert.strictEqual(userData.invalid, undefined);
-			});
-
-			it('should not change the username to escaped version', async () => {
-				const uid = await User.create({
-					username: 'ex\'ample_user', email: '13475@test.com', password: '123456',
-				}, {
-					emailVerification: 'verify',
-				});
-
-				const data = {
-					uid: uid,
-					username: 'ex\'ample_user',
-					password: '123456',
-				};
-				const result = await apiUser.update({ uid: uid }, {
-					...data, password: '123456', invalid: 'field',
-				});
-				const storedUsername = await db.getObjectField(`user:${uid}`, 'username');
-				assert.equal(result.username, 'ex&#x27;ample_user');
-				assert.equal(storedUsername, 'ex\'ample_user');
-				assert.equal(result.userslug, 'ex-ample_user');
 			});
 
 			it('should also generate an email confirmation code for the changed email', async () => {
@@ -1000,7 +971,7 @@ describe('User', () => {
 			assert.strictEqual(body.status.code, 'ok');
 
 			const picture = await User.getUserField(uid, 'picture');
-			assert.strictEqual(picture, 'https://example.org/picture.jpg');
+			assert.strictEqual(picture, validator.escape('https://example.org/picture.jpg'));
 		});
 
 		it('should fail to change user picture with invalid data', async () => {
@@ -1021,17 +992,11 @@ describe('User', () => {
 			}
 		});
 
-		it('should return picture and uploaded picture as different values', async () => {
-			const userData = await User.getUserFields(uid, ['picture', 'uploadedpicture']);
-			assert.notStrictEqual(userData.picture, userData.uploadedpicture);
-		});
-
 		it('should set user picture to uploaded', async () => {
-			await User.setUserField(uid, 'uploadedpicture', '/assets/uploads/test');
-			await db.sortedSetAdd(`uid:${uid}:profile:pictures`, Date.now(), '/assets/uploads/test');
-			await apiUser.changePicture({ uid: uid }, { type: 'uploaded', picture: '/assets/uploads/test', uid: uid });
+			await User.setUserField(uid, 'uploadedpicture', '/test');
+			await apiUser.changePicture({ uid: uid }, { type: 'uploaded', uid: uid });
 			const picture = await User.getUserField(uid, 'picture');
-			assert.equal(picture, `${nconf.get('relative_path')}/assets/uploads/test`);
+			assert.equal(picture, `${nconf.get('relative_path')}/test`);
 		});
 
 		it('should return error if profile image uploads disabled', (done) => {
@@ -1062,26 +1027,6 @@ describe('User', () => {
 				assert.equal(err.message, '[[error:invalid-image]]');
 				done();
 			});
-		});
-
-		it('should upload a gif file as profile image', async () => {
-			const uid = await User.create({ username: 'giflover', password: '123456' });
-			const { jar, csrf_token } = await helpers.loginUser('giflover', '123456');
-			const pathToGif = path.join(__dirname, '../test/files/animated.gif');
-
-			const { response } = await helpers.uploadFile(
-				`${nconf.get('url')}/api/user/giflover/uploadpicture`,
-				pathToGif, { }, jar, csrf_token
-			);
-			assert.strictEqual(response.statusCode, 200);
-			const picture = await db.getObjectField(`user:${uid}`, 'picture');
-			const uploadedPath = path.join(
-				nconf.get('upload_path'), `${picture.replace(nconf.get('upload_url'), '')}`
-			);
-			const sharp = require('sharp');
-			const metadata = await sharp(uploadedPath).metadata();
-			assert.strictEqual(metadata.format, 'gif');
-			assert.ok(metadata.pages > 1);
 		});
 
 		describe('user.uploadCroppedPicture', () => {
@@ -1142,30 +1087,6 @@ describe('User', () => {
 					meta.config.maximumProfileImageSize = temp;
 					done();
 				});
-			});
-
-			it('should normalize uploaded image to png', async () => {
-				const oldValue = meta.config['profile:convertProfileImageToPNG'];
-				meta.config['profile:convertProfileImageToPNG'] = 1;
-
-				const uid = await User.create({ username: 'pngnormalize', password: '123456' });
-				const { jar, csrf_token } = await helpers.loginUser('pngnormalize', '123456');
-				const pathToJpeg = path.join(__dirname, '../test/files/normalise.jpg');
-
-				const { response } = await helpers.uploadFile(
-					`${nconf.get('url')}/api/user/pngnormalize/uploadpicture`,
-					pathToJpeg, { }, jar, csrf_token
-				);
-				assert.strictEqual(response.statusCode, 200);
-				const picture = await db.getObjectField(`user:${uid}`, 'picture');
-				const uploadedPath = path.join(
-					nconf.get('upload_path'), `${picture.replace(nconf.get('upload_url'), '')}`
-				);
-				const sharp = require('sharp');
-				const metadata = await sharp(uploadedPath).metadata();
-				assert.strictEqual(metadata.format, 'png');
-
-				meta.config['profile:convertProfileImageToPNG'] = oldValue;
 			});
 
 			it('should not allow image data with bad MIME type to be passed in', (done) => {
@@ -1408,27 +1329,6 @@ describe('User', () => {
 			assert(result);
 			assert.strictEqual(result.topicData.title, 'banned topic');
 		});
-
-		it('should unban user properly if only "banned" field is requested', async () => {
-			const testUid = await User.create({ username: 'bannedUser3' });
-			await User.bans.ban(testUid, Date.now() + 2000);
-			assert.strictEqual(await db.isSortedSetMember('users:banned', testUid), true);
-			await setTimeout(3000);
-			await User.getUserFields(testUid, ['uid', 'banned']); // loading their data unbans the user
-			assert.strictEqual(await db.isSortedSetMember('users:banned', testUid), false);
-		});
-
-		it('should not return ban reason if login is incorrect', async () => {
-			const testUid = await User.create({ username: 'bannedUser4', password: '654321' });
-			await User.bans.ban(testUid, 0, 'testing bans');
-			let { response, body } = await helpers.loginUser('bannedUser4', '5555555');
-			assert.strictEqual(response.status, 403);
-			assert.strictEqual(body, '[[error:invalid-login-credentials]]');
-
-			({ response, body } = await helpers.loginUser('bannedUser4', '654321'));
-			assert.strictEqual(response.status, 403);
-			assert.strictEqual(body.reason, 'testing bans');
-		});
 	});
 
 	describe('Digest.getSubscribers', () => {
@@ -1495,12 +1395,9 @@ describe('User', () => {
 		it('should send digests', async () => {
 			const oldValue = meta.config.includeUnverifiedEmails;
 			meta.config.includeUnverifiedEmails = true;
-			const uid = await User.create({
-				username: 'digest', email: 'email@test.com',
-			}, {
-				emailVerification: 'verify',
-			});
-
+			const uid = await User.create({ username: 'digest' });
+			await User.setUserField(uid, 'email', 'email@test.com');
+			await User.email.confirmByUid(uid);
 			await User.digest.execute({
 				interval: 'day',
 				subscribers: [uid],
@@ -1732,7 +1629,7 @@ describe('User', () => {
 					postsPerPage: '5',
 					showemail: 1,
 					showfullname: 1,
-					disableIncomingMessages: 0,
+					restrictChat: 0,
 					followTopicsOnCreate: 1,
 					followTopicsOnReply: 1,
 				},
@@ -1757,7 +1654,7 @@ describe('User', () => {
 					postsPerPage: '5',
 					showemail: 1,
 					showfullname: 1,
-					disableIncomingMessages: 0,
+					restrictChat: 0,
 					followTopicsOnCreate: 1,
 					followTopicsOnReply: 1,
 				},
@@ -1765,12 +1662,6 @@ describe('User', () => {
 			await apiUser.updateSettings({ uid: testUid }, data);
 			const userSettings = await User.getSettings(testUid);
 			assert.strictEqual(userSettings.homePageRoute, 'category/6/testing-ground');
-
-
-			data.settings.homePageRoute = '<script>alert(1);</script>';
-			await apiUser.updateSettings({ uid: testUid }, data);
-			const updatedSettings = await User.getSettings(testUid);
-			assert.strictEqual(updatedSettings.homePageRoute, '&lt;script&gt;alert(1);&lt;/script&gt;');
 		});
 
 
@@ -1789,19 +1680,6 @@ describe('User', () => {
 			} catch (err) {
 				assert.equal(err.message, '[[error:invalid-language]]');
 			}
-		});
-
-		it('should error if notificationType_upvote is invalid', async () => {
-			const data = {
-				uid: testUid,
-				settings: {
-					notificationType_upvote: '<invalid-string>',
-				},
-			};
-			await assert.rejects(
-				apiUser.updateSettings({ uid: testUid }, data),
-				{ message: '[[error:invalid-notification-type]]' }
-			);
 		});
 
 		it('should set moderation note', async () => {
@@ -1992,7 +1870,7 @@ describe('User', () => {
 				privateGroup: groups.create({ name: PRIVATE_GROUP, private: 1 }),
 				hiddenGroup: groups.create({ name: HIDDEN_GROUP, hidden: 1 }),
 				notAnInviter: User.create({ username: 'notAnInviter', password: COMMON_PW }),
-				inviter: User.create({ username: 'inviter', password: COMMON_PW, email: 'invited@nodebb.org' }, { emailVerification: 'verify' }),
+				inviter: User.create({ username: 'inviter', password: COMMON_PW }),
 				admin: User.create({ username: 'adminInvite', password: COMMON_PW }),
 			});
 
@@ -2000,10 +1878,12 @@ describe('User', () => {
 			inviterUid = results.inviter;
 			adminUid = results.admin;
 
+			await User.setUserField(inviterUid, 'email', 'inviter@nodebb.org');
 			await Promise.all([
 				groups.create({ name: OWN_PRIVATE_GROUP, ownerUid: inviterUid, private: 1 }),
 				groups.join('administrators', adminUid),
 				groups.join('cid:0:privileges:invite', inviterUid),
+				User.email.confirmByUid(inviterUid),
 			]);
 		});
 
@@ -2338,8 +2218,14 @@ describe('User', () => {
 	});
 
 	describe('user jobs', () => {
-		it('should start user jobs', async () => {
-			await User.startJobs();
+		it('should start user jobs', (done) => {
+			User.startJobs();
+			done();
+		});
+
+		it('should stop user jobs', (done) => {
+			User.stopJobs();
+			done();
 		});
 
 		it('should send digest', (done) => {

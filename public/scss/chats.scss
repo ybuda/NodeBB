@@ -121,6 +121,12 @@ body.page-user-chats {
 }
 
 .chat-modal {
+	left: auto;
+	top: auto;
+	bottom: 0px;
+	right: 2rem;
+	width: auto!important;
+	height: auto!important;
 	[component="chat/user/list/btn"], [component="chat/pinned/messages/btn"] {
 		display: none!important;
 	}

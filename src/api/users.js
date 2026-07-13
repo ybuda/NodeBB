@@ -2,7 +2,7 @@
 
 const path = require('path');
 const fs = require('fs').promises;
-const nconf = require('nconf');
+
 const validator = require('validator');
 const winston = require('winston');
 
@@ -57,7 +57,7 @@ usersAPI.update = async function (caller, data) {
 		throw new Error('[[error:invalid-data]]');
 	}
 
-	const oldUserData = await db.getObjectFields(`user:${data.uid}`, ['email', 'username']);
+	const oldUserData = await user.getUserFields(data.uid, ['email', 'username']);
 	if (!oldUserData || !oldUserData.username) {
 		throw new Error('[[error:invalid-data]]');
 	}
@@ -86,14 +86,14 @@ usersAPI.update = async function (caller, data) {
 
 	await user.updateProfile(caller.uid, data);
 	const userData = await user.getUserData(data.uid);
-	const oldUsernameEscaped = validator.escape(String(oldUserData.username));
-	if (userData.username !== oldUsernameEscaped) {
+
+	if (userData.username !== oldUserData.username) {
 		await events.log({
 			type: 'username-change',
 			uid: caller.uid,
 			targetUid: data.uid,
 			ip: caller.ip,
-			oldUsername: oldUsernameEscaped,
+			oldUsername: oldUserData.username,
 			newUsername: userData.username,
 		});
 	}
@@ -132,13 +132,10 @@ usersAPI.updateSettings = async function (caller, data) {
 
 	let defaults = await user.getSettings(0);
 	defaults = {
-		unreadCutoff: defaults.unreadCutoff,
 		postsPerPage: defaults.postsPerPage,
 		topicsPerPage: defaults.topicsPerPage,
 		userLang: defaults.userLang,
 		acpLang: defaults.acpLang,
-		chatAllowList: '[]',
-		chatDenyList: '[]',
 	};
 	// load raw settings without parsing values to booleans
 	const current = await db.getObject(`user:${data.uid}:settings`);
@@ -149,10 +146,7 @@ usersAPI.updateSettings = async function (caller, data) {
 };
 
 usersAPI.getStatus = async (caller, { uid }) => {
-	let status = await db.getObjectField(`user:${uid}`, 'status');
-	if (!user.allowedStatus.includes(status)) {
-		status = 'offline';
-	}
+	const status = await db.getObjectField(`user:${uid}`, 'status');
 	return { status };
 };
 
@@ -268,7 +262,6 @@ usersAPI.mute = async function (caller, data) {
 	}
 	const reason = data.reason || '[[user:info.muted-no-reason]]';
 	await db.setObject(`user:${data.uid}`, {
-		muted: 1,
 		mutedUntil: data.until,
 		mutedReason: reason,
 	});
@@ -284,11 +277,8 @@ usersAPI.mute = async function (caller, data) {
 	if (data.reason) {
 		muteData.reason = reason;
 	}
-	await Promise.all([
-		db.sortedSetAdd(`users:muted`, now, data.uid),
-		db.sortedSetAdd(`uid:${data.uid}:mutes:timestamp`, now, muteKey),
-		db.setObject(muteKey, muteData),
-	]);
+	await db.sortedSetAdd(`uid:${data.uid}:mutes:timestamp`, now, muteKey);
+	await db.setObject(muteKey, muteData);
 	await events.log({
 		type: 'user-mute',
 		uid: caller.uid,
@@ -310,7 +300,7 @@ usersAPI.unmute = async function (caller, data) {
 		throw new Error('[[error:no-privileges]]');
 	}
 
-	await db.deleteObjectFields(`user:${data.uid}`, ['muted', 'mutedUntil', 'mutedReason']);
+	await db.deleteObjectFields(`user:${data.uid}`, ['mutedUntil', 'mutedReason']);
 	const now = Date.now();
 	const unmuteKey = `uid:${data.uid}:unmute:${now}`;
 	const unmuteData = {
@@ -322,11 +312,8 @@ usersAPI.unmute = async function (caller, data) {
 	if (data.reason) {
 		unmuteData.reason = data.reason;
 	}
-	await Promise.all([
-		db.sortedSetRemove(`users:muted`, data.uid),
-		db.sortedSetAdd(`uid:${data.uid}:unmutes:timestamp`, now, unmuteKey),
-		db.setObject(unmuteKey, unmuteData),
-	]);
+	await db.sortedSetAdd(`uid:${data.uid}:unmutes:timestamp`, now, unmuteKey);
+	await db.setObject(unmuteKey, unmuteData);
 	await events.log({
 		type: 'user-unmute',
 		uid: caller.uid,
@@ -608,7 +595,6 @@ usersAPI.search = async function (caller, data) {
 			data.searchBy === 'ip' ||
 			data.searchBy === 'email' ||
 			filters.includes('banned') ||
-			filters.includes('muted') ||
 			filters.includes('flagged')
 		) && !isPrivileged)
 	) {
@@ -629,35 +615,21 @@ usersAPI.changePicture = async (caller, data) => {
 		throw new Error('[[error:invalid-data]]');
 	}
 
+	const { type, url } = data;
+	let picture = '';
+
 	await user.checkMinReputation(caller.uid, data.uid, 'min:rep:profile-picture');
 	const canEdit = await privileges.users.canEdit(caller.uid, data.uid);
 	if (!canEdit) {
 		throw new Error('[[error:no-privileges]]');
 	}
 
-	const { type, url } = data;
-	let picture;
 	if (type === 'default') {
 		picture = '';
 	} else if (type === 'uploaded') {
-		const cleanPath = data.picture.replace(new RegExp(`^${nconf.get('relative_path')}`), '');
-		const isUserPicture = await user.isUserUploadedPicture(data.uid, cleanPath);
-		if (isUserPicture) {
-			await user.setUserField(data.uid, 'uploadedpicture', cleanPath);
-			picture = cleanPath;
-		} else {
-			picture = '';
-		}
+		picture = await user.getUserField(data.uid, 'uploadedpicture');
 	} else if (type === 'external' && url) {
-		const isUrl = validator.isURL(String(url).trim(), {
-			require_protocol: true,
-			require_valid_protocol: true,
-			require_tld: true,
-		});
-		if (!isUrl) {
-			throw new Error('[[error:invalid-url]]');
-		}
-		picture = String(url || '').trim();
+		picture = validator.escape(url);
 	} else {
 		const returnData = await plugins.hooks.fire('filter:user.getPicture', {
 			uid: caller.uid,
@@ -696,17 +668,9 @@ const prepareExport = async ({ uid, type }) => {
 	}
 };
 
-usersAPI.checkExportByType = async (caller, { uid, type }) => {
-	if (!await privileges.users.canExportData(caller.uid, uid)) {
-		throw new Error('[[error:no-privileges]]');
-	}
-	return await prepareExport({ uid, type });
-};
+usersAPI.checkExportByType = async (caller, { uid, type }) => await prepareExport({ uid, type });
 
 usersAPI.getExportByType = async (caller, { uid, type }) => {
-	if (!await privileges.users.canExportData(caller.uid, uid)) {
-		throw new Error('[[error:no-privileges]]');
-	}
 	const [extension, mime] = exportMetadata.get(type);
 	const filename = `${uid}_${type}.${extension}`;
 
@@ -719,9 +683,6 @@ usersAPI.getExportByType = async (caller, { uid, type }) => {
 };
 
 usersAPI.generateExport = async (caller, { uid, type }) => {
-	if (!await privileges.users.canExportData(caller.uid, uid)) {
-		throw new Error('[[error:no-privileges]]');
-	}
 	const validTypes = ['profile', 'posts', 'uploads'];
 	if (!validTypes.includes(type)) {
 		throw new Error('[[error:invalid-data]]');

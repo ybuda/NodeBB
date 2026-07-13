@@ -5,7 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const winston = require('winston');
 const validator = require('validator');
-const { AsyncParser } = require('@json2csv/node');
+const json2csvAsync = require('json2csv').parseAsync;
 
 const { baseDir } = require('../constants').paths;
 const db = require('../database');
@@ -55,8 +55,7 @@ module.exports = function (User) {
 			fields: fieldsToExport,
 			showIps: fieldsToExport.includes('ip'),
 		});
-		const customUserFields = await db.getSortedSetRange('user-custom-fields', 0, -1);
-		const fieldsToWrapInQuotes = ['fullname', 'signature', 'aboutme', ...customUserFields];
+
 		if (!showIps && fields.includes('ip')) {
 			fields.splice(fields.indexOf('ip'), 1);
 		}
@@ -64,7 +63,7 @@ module.exports = function (User) {
 			path.join(baseDir, 'build/export', 'users.csv'),
 			'w'
 		);
-		await fs.promises.appendFile(fd, `${fields.map(f => `"${f}"`).join(',')}\n`);
+		fs.promises.appendFile(fd, `${fields.map(f => `"${f}"`).join(',')}\n`);
 		await batch.processSortedSet('users:joindate', async (uids) => {
 			const userFieldsToLoad = fields.filter(field => field !== 'ip' && field !== 'password');
 			const usersData = await User.getUsersFields(uids, userFieldsToLoad);
@@ -77,16 +76,10 @@ module.exports = function (User) {
 				if (Array.isArray(userIps[index])) {
 					user.ip = userIps[index].join(',');
 				}
-				fieldsToWrapInQuotes.forEach((field) => {
-					if (user[field]) {
-						user[field] = `"${String(user[field])}"`;
-					}
-				});
 			});
 
 			const opts = { fields, header: false };
-			const json2csvAsync = new AsyncParser(opts);
-			const csv = await json2csvAsync.parse(usersData).promise();
+			const csv = await json2csvAsync(usersData, opts);
 			await fs.promises.appendFile(fd, csv);
 		}, {
 			batch: 5000,

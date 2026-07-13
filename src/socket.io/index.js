@@ -1,5 +1,6 @@
 'use strict';
 
+const _ = require('lodash');
 const os = require('os');
 const nconf = require('nconf');
 const winston = require('winston');
@@ -72,14 +73,7 @@ Sockets.init = async function (server) {
 		winston.info(`[socket.io] Restricting access to origin: ${origins}`);
 	}
 
-	const eio = io.listen(server, opts);
-	if (process.env.NODE_ENV === 'development') {
-		if (eio?.engine?.on) {
-			eio.engine.on('connection_error', (err) => {
-				winston.error(`[socket.io] Connection error: [${err.code}]-${err.message}`);
-			});
-		}
-	}
+	io.listen(server, opts);
 	Sockets.server = io;
 };
 
@@ -317,16 +311,16 @@ Sockets.getUidsInRoom = async function (room) {
 		return [];
 	}
 	const ioRoom = Sockets.server.in(room);
-	const uids = new Set();
+	const uids = [];
 	if (ioRoom) {
 		const sockets = await ioRoom.fetchSockets();
 		for (const s of sockets) {
 			if (s && s.data && s.data.uid > 0) {
-				uids.add(s.data.uid);
+				uids.push(s.data.uid);
 			}
 		}
 	}
-	return [...uids];
+	return _.uniq(uids);
 };
 
 Sockets.warnDeprecated = (socket, replacement) => {

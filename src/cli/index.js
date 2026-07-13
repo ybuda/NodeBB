@@ -4,16 +4,6 @@ const fs = require('fs');
 const path = require('path');
 
 require('../../require-main');
-require('../../nodebb-global');
-
-// https://github.com/NodeBB/NodeBB/issues/13734
-// check dev flag early so packageInstall.installAll() can use it
-const isDev = process.argv.some(arg =>
-	arg === '-d' ||
-	arg === '--dev' ||
-	(arg.startsWith('-') && !arg.startsWith('--') && arg.includes('d')));
-
-process.env.NODE_ENV = isDev ? 'development' : (process.env.NODE_ENV || 'production');
 
 const packageInstall = require('./package-install');
 const { paths } = require('../constants');
@@ -50,10 +40,9 @@ try {
 	checkVersion('chalk');
 	checkVersion('lodash');
 	checkVersion('lru-cache');
-	checkVersion('@xmldom/xmldom');
 } catch (e) {
 	if (['ENOENT', 'DEP_WRONG_VERSION', 'MODULE_NOT_FOUND'].includes(e.code)) {
-		console.warn(`Dependencies outdated or not yet installed. Error Code: ${e.code}\n${e.stack}`);
+		console.warn('Dependencies outdated or not yet installed.');
 		console.log('Installing them now...\n');
 
 		packageInstall.updatePackageFile();
@@ -107,7 +96,8 @@ nconf.argv(opts).env({
 	separator: '__',
 });
 
-
+process.env.NODE_ENV = process.env.NODE_ENV || 'production';
+global.env = process.env.NODE_ENV || 'production';
 
 prestart.setupWinston();
 
@@ -149,6 +139,7 @@ program
 	.description('Start NodeBB in verbose development mode')
 	.action(() => {
 		process.env.NODE_ENV = 'development';
+		global.env = 'development';
 		require('./running').start({ ...program.opts(), dev: true });
 	});
 program
@@ -215,6 +206,7 @@ program
 	.action((targets, options) => {
 		if (program.opts().dev) {
 			process.env.NODE_ENV = 'development';
+			global.env = 'development';
 		}
 		require('./manage').build(targets.length ? targets : true, options);
 	})
@@ -304,6 +296,7 @@ program
 		options.unattended = program.opts().unattended;
 		if (program.opts().dev) {
 			process.env.NODE_ENV = 'development';
+			global.env = 'development';
 		}
 		require('./upgrade').upgrade(scripts.length ? scripts : true, options);
 	});

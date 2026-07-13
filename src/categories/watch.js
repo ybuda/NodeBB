@@ -3,7 +3,6 @@
 const db = require('../database');
 const user = require('../user');
 const activitypub = require('../activitypub');
-const utils = require('../utils');
 
 module.exports = function (Categories) {
 	Categories.watchStates = {
@@ -30,14 +29,10 @@ module.exports = function (Categories) {
 		}
 		const keys = cids.map(cid => `cid:${cid}:uid:watch:state`);
 		const [userSettings, states] = await Promise.all([
-			utils.isNumber(uid) ? user.getSettings(uid) : { categoryWatchState: 0 },
+			user.getSettings(uid),
 			db.sortedSetsScore(keys, uid),
 		]);
-
-		const fallbacks = cids.map(cid => (utils.isNumber(cid) ?
-			Categories.watchStates[userSettings.categoryWatchState] : Categories.watchStates.notwatching));
-
-		return states.map((state, idx) => state || fallbacks[idx]);
+		return states.map(state => state || Categories.watchStates[userSettings.categoryWatchState]);
 	};
 
 	Categories.getIgnorers = async function (cid, start, stop) {

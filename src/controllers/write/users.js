@@ -5,7 +5,6 @@ const path = require('path');
 const crypto = require('crypto');
 
 const api = require('../../api');
-const activitypub = require('../../activitypub');
 const user = require('../../user');
 
 const helpers = require('../helpers');
@@ -43,17 +42,17 @@ Users.update = async (req, res) => {
 };
 
 Users.delete = async (req, res) => {
-	await api.users.delete(req, { ...req.params, password: req.body?.password });
+	await api.users.delete(req, { ...req.params, password: req.body.password });
 	helpers.formatApiResponse(200, res);
 };
 
 Users.deleteContent = async (req, res) => {
-	await api.users.deleteContent(req, { ...req.params, password: req.body?.password });
+	await api.users.deleteContent(req, { ...req.params, password: req.body.password });
 	helpers.formatApiResponse(200, res);
 };
 
 Users.deleteAccount = async (req, res) => {
-	await api.users.deleteAccount(req, { ...req.params, password: req.body?.password });
+	await api.users.deleteAccount(req, { ...req.params, password: req.body.password });
 	helpers.formatApiResponse(200, res);
 };
 
@@ -95,7 +94,11 @@ Users.changePassword = async (req, res) => {
 Users.follow = async (req, res) => {
 	const remote = String(req.params.uid).includes('@');
 	if (remote) {
-		await activitypub.out.follow('uid', req.uid, req.params.uid);
+		await api.activitypub.follow(req, {
+			type: 'uid',
+			id: req.uid,
+			actor: req.params.uid,
+		});
 	} else {
 		await api.users.follow(req, req.params);
 	}
@@ -106,7 +109,11 @@ Users.follow = async (req, res) => {
 Users.unfollow = async (req, res) => {
 	const remote = String(req.params.uid).includes('@');
 	if (remote) {
-		await activitypub.out.undo.follow('uid', req.uid, req.params.uid);
+		await api.activitypub.unfollow(req, {
+			type: 'uid',
+			id: req.uid,
+			actor: req.params.uid,
+		});
 	} else {
 		await api.users.unfollow(req, req.params);
 	}
@@ -119,11 +126,7 @@ Users.ban = async (req, res) => {
 };
 
 Users.unban = async (req, res) => {
-	const params = {
-		uid: req.params.uid,
-		reason: req.query.reason || req.body.reason,
-	};
-	await api.users.unban(req, params);
+	await api.users.unban(req, { ...req.body, uid: req.params.uid });
 	helpers.formatApiResponse(200, res);
 };
 
@@ -133,11 +136,7 @@ Users.mute = async (req, res) => {
 };
 
 Users.unmute = async (req, res) => {
-	const params = {
-		uid: req.params.uid,
-		reason: req.query.reason || req.body.reason,
-	};
-	await api.users.unmute(req, params);
+	await api.users.unmute(req, { ...req.body, uid: req.params.uid });
 	helpers.formatApiResponse(200, res);
 };
 

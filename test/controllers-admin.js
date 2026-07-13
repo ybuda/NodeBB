@@ -4,8 +4,8 @@ const async = require('async');
 const assert = require('assert');
 const nconf = require('nconf');
 
-const db = require('./mocks/databasemock');
 const request = require('../src/request');
+const db = require('./mocks/databasemock');
 const categories = require('../src/categories');
 const topics = require('../src/topics');
 const user = require('../src/user');
@@ -629,7 +629,6 @@ describe('Admin Controllers', () => {
 					'uploadfavicon',
 					'uploadTouchIcon',
 					'uploadMaskableIcon',
-					'uploadScreenshot',
 					'uploadlogo',
 					'uploadOgImage',
 					'uploadDefaultAvatar',
@@ -644,7 +643,7 @@ describe('Admin Controllers', () => {
 
 					await privileges.admin.give([privileges.admin.routeMap[route]], uid);
 					({ response: res } = await request.get(`${nconf.get('url')}/api/admin/${route}`, requestOpts));
-					assert.strictEqual(res.statusCode, 200, `${route} returned ${res.statusCode} instead of 200`);
+					assert.strictEqual(res.statusCode, 200);
 
 					await privileges.admin.rescind([privileges.admin.routeMap[route]], uid);
 				}

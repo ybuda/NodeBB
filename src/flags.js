@@ -5,6 +5,7 @@ const winston = require('winston');
 const validator = require('validator');
 
 const activitypub = require('./activitypub');
+const activitypubApi = require('./api/activitypub');
 const db = require('./database');
 const user = require('./user');
 const groups = require('./groups');
@@ -18,7 +19,6 @@ const privileges = require('./privileges');
 const plugins = require('./plugins');
 const utils = require('./utils');
 const batch = require('./batch');
-const translator = require('./translator');
 
 const Flags = module.exports;
 
@@ -96,6 +96,7 @@ Flags.init = async function () {
 	};
 
 	try {
+		({ filters: Flags._filters } = await plugins.hooks.fire('filter:flags.getFilters', hookData));
 		({ filters: Flags._filters, states: Flags._states } = await plugins.hooks.fire('filter:flags.init', hookData));
 	} catch (err) {
 		winston.error(`[flags/init] Could not retrieve filters\n${err.stack}`);
@@ -122,11 +123,6 @@ Flags.get = async function (flagId) {
 		notes,
 		reports,
 	};
-	['flagId', 'targetUid', 'datetime', 'targetId'].forEach((prop) => {
-		if (flagObj?.[prop]) {
-			flagObj[prop] = parseInt(flagObj[prop], 10);
-		}
-	});
 
 	const data = await plugins.hooks.fire('filter:flags.get', {
 		flag: flagObj,
@@ -215,11 +211,6 @@ Flags.list = async function (data) {
 			...flagObj,
 		};
 		flagObj.labelClass = Flags._states.get(flagObj.state).class;
-		['flagId', 'targetUid', 'datetime'].forEach((prop) => {
-			if (flagObj?.[prop]) {
-				flagObj[prop] = parseInt(flagObj[prop], 10);
-			}
-		});
 
 		return Object.assign(flagObj, {
 			target_readable: `${flagObj.type.charAt(0).toUpperCase() + flagObj.type.slice(1)} ${flagObj.targetId}`,
@@ -487,7 +478,8 @@ Flags.create = async function (type, id, uid, reason, timestamp, forceFlag = fal
 	const flagObj = await Flags.get(flagId);
 
 	if (notifyRemote && activitypub.helpers.isUri(id)) {
-		activitypub.out.flag(uid, { ...flagObj, reason });
+		const caller = await user.getUserData(uid);
+		activitypubApi.flag(caller, { ...flagObj, reason });
 	}
 
 	plugins.hooks.fire('action:flags.create', { flag: flagObj });
@@ -540,7 +532,7 @@ Flags.purge = async function (flagIds) {
 		flagData.flatMap(
 			async (flagObj, i) => allReporterUids[i].map(async (uid) => {
 				if (await db.isSortedSetMember(`flag:${flagObj.flagId}:remote`, uid)) {
-					await activitypub.out.undo.flag(uid, flagObj);
+					await activitypubApi.undo.flag({ uid }, flagObj);
 				}
 			})
 		),
@@ -578,7 +570,7 @@ Flags.addReport = async function (flagId, type, id, uid, reason, timestamp, targ
 	]);
 
 	if (notifyRemote && activitypub.helpers.isUri(id)) {
-		await activitypub.out.flag(uid, { flagId, type, targetId: id, targetUid, uid, reason, timestamp });
+		await activitypubApi.flag({ uid }, { flagId, type, targetId: id, targetUid, uid, reason, timestamp });
 	}
 
 	plugins.hooks.fire('action:flags.addReport', { flagId, type, id, uid, reason, timestamp });
@@ -608,7 +600,7 @@ Flags.rescindReport = async (type, id, uid) => {
 
 	if (await db.isSortedSetMember(`flag:${flagId}:remote`, uid)) {
 		const flag = await Flags.get(flagId);
-		await activitypub.out.undo.flag(uid, flag);
+		await activitypubApi.undo.flag({ uid }, flag);
 	}
 
 	await db.sortedSetRemoveBulk([
@@ -758,6 +750,7 @@ Flags.update = async function (flagId, uid, changeset) {
 		const notifObj = await notifications.create({
 			type: 'my-flags',
 			bodyShort: `[[notifications:flag-assigned-to-you, ${flagId}]]`,
+			bodyLong: '',
 			path: `/flags/${flagId}`,
 			nid: `flags:assign:${flagId}:uid:${assigneeId}`,
 			from: uid,
@@ -765,7 +758,8 @@ Flags.update = async function (flagId, uid, changeset) {
 		await notifications.push(notifObj, [assigneeId]);
 	};
 	const isAssignable = async function (assigneeId) {
-		let allowed = await user.isAdminOrGlobalMod(assigneeId);
+		let allowed = false;
+		allowed = await user.isAdminOrGlobalMod(assigneeId);
 
 		// Mods are also allowed to be assigned, if flag target is post in uid's moderated cid
 		if (!allowed && current.type === 'post') {
@@ -865,7 +859,7 @@ Flags.getHistory = async function (flagId) {
 		}
 
 		return {
-			uid: utils.isNumber(entry.value[0]) ? parseInt(entry.value[0], 10) : entry.value[0],
+			uid: entry.value[0],
 			fields: changeset,
 			datetime: entry.score,
 			datetimeISO: utils.toISOString(entry.score),
@@ -927,7 +921,7 @@ Flags.notify = async function (flagObj, uid, notifySelf = false) {
 		groups.getMembers('Global Moderators', 0, -1),
 	]);
 	let uids = admins.concat(globalMods);
-	let notifObj;
+	let notifObj = null;
 
 	const { displayname } = flagObj.reports[flagObj.reports.length - 1].reporter;
 
@@ -938,12 +932,12 @@ Flags.notify = async function (flagObj, uid, notifySelf = false) {
 		]);
 
 		const modUids = await categories.getModeratorUids([cid]);
-		const titleEscaped = utils.decodeHTMLEntities(title);
+		const titleEscaped = utils.decodeHTMLEntities(title).replace(/%/g, '&#37;').replace(/,/g, '&#44;');
 
 		notifObj = await notifications.create({
 			type: 'new-post-flag',
-			bodyShort: translator.compile('notifications:user-flagged-post-in', displayname, titleEscaped),
-			bodyLong: String(flagObj.target?.content || ''),
+			bodyShort: `[[notifications:user-flagged-post-in, ${displayname}, ${titleEscaped}]]`,
+			bodyLong: await plugins.hooks.fire('filter:parse.raw', String(flagObj.description || '')),
 			pid: flagObj.targetId,
 			path: `/flags/${flagObj.flagId}`,
 			nid: `flag:post:${flagObj.targetId}:${uid}`,

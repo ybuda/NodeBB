@@ -10,8 +10,6 @@
 	"user": "Brukar",
 	"when": "Når",
 	"category": "Kategori",
-	"crosspost-to": "Crosspost to",
-	"tags": "Tags",
 	"title": "Tittel",
 	"content": "Innhald",
 	"posted": "Posta",
@@ -21,7 +19,6 @@
 	"title-editable": "Tittel kan redigerast",
 	"reply": "Svar",
 	"topic": "Emne",
-	"crosspost": "Crosspost",
 	"accept": "Godkjenn",
 	"reject": "Avvis",
 	"remove": "Fjern",
@@ -42,6 +39,5 @@
 	"remove-selected-confirm": "Er du sikker på at du vil fjerne dei valde?",
 	"bulk-accept-success": "Alle valde vart godkjent.",
 	"bulk-reject-success": "Alle valde vart avvist.",
-	"links-in-this-post": "Lenkjer i dette innlegget",
-	"thumbs-in-this-post": "Thumbnails in this post"
+	"links-in-this-post": "Lenkjer i dette innlegget"
 }

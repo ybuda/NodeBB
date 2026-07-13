@@ -40,22 +40,18 @@ image.resizeImage = async function (data) {
 			width: data.width,
 			height: data.height,
 			quality: data.quality,
-			type: data.type,
 		});
 	} else {
 		const sharp = requireSharp();
 		const buffer = await fs.promises.readFile(data.path);
 		const sharpImage = sharp(buffer, {
 			failOnError: true,
-			animated: data.type === 'image/gif',
+			animated: data.path.endsWith('gif'),
 		});
 		const metadata = await sharpImage.metadata();
 
 		sharpImage.rotate(); // auto-orients based on exif data
-		// don't resize if width/height not changing or not specificied
-		if ((data.width && metadata.width !== data.width) || (data.height && metadata.height !== data.height)) {
-			sharpImage.resize(data.width || null, data.height || null);
-		}
+		sharpImage.resize(data.hasOwnProperty('width') ? data.width : null, data.hasOwnProperty('height') ? data.height : null);
 
 		if (data.quality) {
 			switch (metadata.format) {
@@ -106,15 +102,14 @@ image.size = async function (path) {
 	return imageData ? { width: imageData.width, height: imageData.height } : undefined;
 };
 
-image.stripEXIF = async function ({ path, type }) {
-	if (!meta.config.stripEXIFData || type === 'image/gif' || type === 'image/svg+xml') {
+image.stripEXIF = async function (path) {
+	if (!meta.config.stripEXIFData || path.endsWith('.gif') || path.endsWith('.svg')) {
 		return;
 	}
 	try {
 		if (plugins.hooks.hasListeners('filter:image.stripEXIF')) {
 			await plugins.hooks.fire('filter:image.stripEXIF', {
 				path: path,
-				type: type,
 			});
 			return;
 		}

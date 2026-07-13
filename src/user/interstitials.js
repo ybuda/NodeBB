@@ -34,10 +34,8 @@ Interstitials.email = async (data) => {
 	]);
 
 	let email;
-	if (data.req.uid && data.userData.uid && data.req.uid === data.userData.uid) {
+	if (data.userData.uid) {
 		email = await user.getUserField(data.userData.uid, 'email');
-	} else if (data.userData.token) {
-		email = await user.getEmailFromToken(data.userData.token);
 	}
 
 	data.interstitials.push({

@@ -11,8 +11,6 @@ get:
             allOf:
               - type: object
                 properties:
-                  graphTitle:
-                    type: string
                   set:
                     type: string
                     description: The analytics set that is being queried

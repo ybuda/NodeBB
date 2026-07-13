@@ -10,8 +10,6 @@
 	"user": "用户",
 	"when": "当",
 	"category": "版块",
-	"crosspost-to": "交叉发布至",
-	"tags": "标签",
 	"title": "标题",
 	"content": "内容",
 	"posted": "发布",
@@ -21,7 +19,6 @@
 	"title-editable": "点击标题开始编辑",
 	"reply": "回复",
 	"topic": "主题",
-	"crosspost": "交叉发布",
 	"accept": "接受",
 	"reject": "拒绝",
 	"remove": "移除",
@@ -36,12 +33,11 @@
 	"reject-all-confirm": "您想要拒绝全部帖子吗？",
 	"reject-selected": "拒绝选中项",
 	"reject-selected-confirm": "您确定要拒绝%1个选择的帖子吗？",
-	"remove-all": "移除全部",
+	"remove-all": "移动全部",
 	"remove-all-confirm": "你想删除所有的帖子吗？",
 	"remove-selected": "移除所选内容",
 	"remove-selected-confirm": "你想删除%1的选定帖子吗？",
 	"bulk-accept-success": "%1个帖子已接受",
 	"bulk-reject-success": "%1个帖子已拒绝",
-	"links-in-this-post": "帖子中的链接",
-	"thumbs-in-this-post": "本帖子中的缩略图"
+	"links-in-this-post": "帖子中的链接"
 }

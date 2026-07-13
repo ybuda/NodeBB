@@ -1,7 +1,7 @@
 'use strict';
 
 const { merge } = require('webpack-merge');
-const MinimizerPlugin = require('minimizer-webpack-plugin');
+const TerserPlugin = require('terser-webpack-plugin');
 const ProgressPlugin = require('progress-webpack-plugin');
 
 const common = require('./webpack.common');
@@ -14,9 +14,9 @@ module.exports = merge(common, /** @type { import('webpack').Configuration } */ 
 	optimization: {
 		minimize: true,
 		minimizer: [
-			new MinimizerPlugin({
-				minify: MinimizerPlugin.esbuildMinify,
-				minimizerOptions: {},
+			new TerserPlugin({
+				minify: TerserPlugin.esbuildMinify,
+				terserOptions: {},
 			}),
 		],
 	},

@@ -31,8 +31,7 @@ const templateToData = {
 		noItemsFoundKey: '[[user:has-no-posts]]',
 		crumb: '[[global:posts]]',
 		getSets: async function (callerUid, userData) {
-			let cids = await db.getSortedSetRangeByScore(`uid:${userData.uid}:cids`, 0, -1, 1, '+inf');
-			cids = await privileges.categories.filterCids('topics:read', cids, callerUid);
+			const cids = await categories.getCidsByPrivilege('categories:cid', callerUid, 'topics:read');
 			return cids.map(c => `cid:${c}:uid:${userData.uid}:pids`);
 		},
 	},
@@ -144,8 +143,7 @@ const templateToData = {
 		noItemsFoundKey: '[[user:has-no-topics]]',
 		crumb: '[[global:topics]]',
 		getSets: async function (callerUid, userData) {
-			let cids = await db.getSortedSetRangeByScore(`uid:${userData.uid}:cids`, 0, -1, 1, '+inf');
-			cids = await privileges.categories.filterCids('topics:read', cids, callerUid);
+			const cids = await categories.getCidsByPrivilege('categories:cid', callerUid, 'topics:read');
 			return cids.map(c => `cid:${c}:uid:${userData.uid}:tids`);
 		},
 	},

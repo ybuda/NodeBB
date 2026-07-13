@@ -24,16 +24,48 @@ get:
                     type: array
                     items:
                       type: string
-                  posts:
-                    $ref: ../components/schemas/PostsObject.yaml#/PostsObject
-                  selectedCategory:
-                    $ref: ../components/schemas/CategoryObject.yaml#/CategoryObject
-                  showThumbs:
-                    type: boolean
-                  showTopicTools:
-                    type: boolean
-                  showSelect:
-                    type: boolean
+                  topicCount:
+                    type: number
+                  topics:
+                    type: array
+                    items:
+                      $ref: ../components/schemas/TopicObject.yaml#/TopicObject
+                  # tids:
+                  #   type: array
+                  #   items:
+                  #     type: number
+                  # canPost:
+                  #   type: boolean
+                  # showSelect:
+                  #   type: boolean
+                  # showTopicTools:
+                  #   type: boolean
+                  # allCategoriesUrl:
+                  #   type: string
+                  # selectedCategory:
+                  #   type: object
+                  #   properties:
+                  #     icon:
+                  #       type: string
+                  #     name:
+                  #       type: string
+                  #     bgColor:
+                  #       type: string
+                  #   nullable: true
+                  # selectedCids:
+                  #   type: array
+                  #   items:
+                  #     type: number
+                  selectedTag:
+                    type: object
+                    properties:
+                      label:
+                        type: string
+                    nullable: true
+                  selectedTags:
+                    type: array
+                    items:
+                      type: string
                   isWatched:
                     type: boolean
                   isTracked:
@@ -42,9 +74,14 @@ get:
                     type: boolean
                   isIgnored:
                     type: boolean
-                  hasFollowers:
-                    type: boolean
-                    nullable: true
+                  feeds:disableRSS:
+                    type: number
+                  rssFeedUrl:
+                    type: string
+                  reputation:disabled:
+                    type: number
+                  title:
+                    type: string
                   privileges:
                     type: object
                     properties:
@@ -52,9 +89,9 @@ get:
                         type: boolean
                       topics:read:
                         type: boolean
-                      topics:schedule:
-                        type: boolean
                       topics:tag:
+                        type: boolean
+                      topics:schedule:
                         type: boolean
                       read:
                         type: boolean
@@ -62,7 +99,6 @@ get:
                         type: boolean
                       cid:
                         type: string
-                        example: '-1'
                       uid:
                         type: number
                         description: A user identifier
@@ -72,14 +108,58 @@ get:
                         type: boolean
                       isAdminOrMod:
                         type: boolean
-                  title:
-                    type: string
-                  topicCount:
-                    type: number
-                  categories:
-                    type: array
-                    items:
-                      $ref: ../components/schemas/CategoryObject.yaml#/CategoryObject
+                  # filters:
+                  #   type: array
+                  #   items:
+                  #     type: object
+                  #     properties:
+                  #       name:
+                  #         type: string
+                  #       url:
+                  #         type: string
+                  #       selected:
+                  #         type: boolean
+                  #       filter:
+                  #         type: string
+                  #       icon:
+                  #         type: string
+                  # selectedFilter:
+                  #   type: object
+                  #   properties:
+                  #     name:
+                  #       type: string
+                  #     url:
+                  #       type: string
+                  #     selected:
+                  #       type: boolean
+                  #     filter:
+                  #       type: string
+                  #     icon:
+                  #       type: string
+                  # terms:
+                  #   type: array
+                  #   items:
+                  #     type: object
+                  #     properties:
+                  #       name:
+                  #         type: string
+                  #       url:
+                  #         type: string
+                  #       selected:
+                  #         type: boolean
+                  #       term:
+                  #         type: string
+                  # selectedTerm:
+                  #   type: object
+                  #   properties:
+                  #     name:
+                  #       type: string
+                  #     url:
+                  #       type: string
+                  #     selected:
+                  #       type: boolean
+                  #     term:
+                  #       type: string
               - $ref: ../components/schemas/Pagination.yaml#/Pagination
               - $ref: ../components/schemas/Breadcrumbs.yaml#/Breadcrumbs
               - $ref: ../components/schemas/CommonProps.yaml#/CommonProps

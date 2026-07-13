@@ -43,7 +43,6 @@ settingsController.get = async function (req, res, next) {
 		getNotificationSettings(userData),
 		getHomePageRoutes(userData),
 		getSkinOptions(userData),
-		getChatAllowDenyList(userData),
 	]);
 
 	userData.customSettings = data.customSettings;
@@ -96,7 +95,6 @@ settingsController.get = async function (req, res, next) {
 
 	userData.maxTopicsPerPage = meta.config.maxTopicsPerPage;
 	userData.maxPostsPerPage = meta.config.maxPostsPerPage;
-	userData.maxUnreadCutoff = Math.max(meta.config.unreadCutoff, 14);
 
 	userData.title = '[[pages:account/settings]]';
 	userData.breadcrumbs = helpers.buildBreadcrumbs([{ text: userData.username, url: `/user/${userData.userslug}` }, { text: '[[user:settings]]' }]);
@@ -189,7 +187,6 @@ async function getNotificationSettings(userData) {
 		return {
 			name: type,
 			label: `[[notifications:${type.replace(/_/g, '-')}]]`,
-			value: setting,
 			none: setting === 'none',
 			notification: setting === 'notification',
 			email: setting === 'email',
@@ -257,13 +254,3 @@ async function getSkinOptions(userData) {
 	});
 	return bootswatchSkinOptions;
 }
-
-async function getChatAllowDenyList(userData) {
-	const [chatAllowListUsers, chatDenyListUsers] = await Promise.all([
-		user.getUsersFields(userData.settings.chatAllowList, ['uid', 'username', 'picture']),
-		user.getUsersFields(userData.settings.chatDenyList, ['uid', 'username', 'picture']),
-	]);
-
-	userData.settings.chatAllowListUsers = chatAllowListUsers;
-	userData.settings.chatDenyListUsers = chatDenyListUsers;
-};

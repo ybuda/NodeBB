@@ -46,12 +46,8 @@ Minifier.killAll = function () {
 };
 
 function getChild() {
-	while (free.length) {
-		const proc = free.shift();
-		if (proc.connected && !proc.killed) {
-			return proc;
-		}
-		removeChild(proc);
+	if (free.length) {
+		return free.shift();
 	}
 
 	const proc = fork(__filename, [], {
@@ -60,20 +56,14 @@ function getChild() {
 			minifier_child: true,
 		},
 	});
-	proc.once('exit', () => removeChild(proc));
 	pool.push(proc);
 
 	return proc;
 }
 
 function freeChild(proc) {
-	proc.removeAllListeners('message');
-	proc.removeAllListeners('error');
-	if (proc.connected && !proc.killed) {
-		free.push(proc);
-	} else {
-		removeChild(proc);
-	}
+	proc.removeAllListeners();
+	free.push(proc);
 }
 
 function removeChild(proc) {
@@ -81,59 +71,32 @@ function removeChild(proc) {
 	if (i !== -1) {
 		pool.splice(i, 1);
 	}
-	const j = free.indexOf(proc);
-	if (j !== -1) {
-		free.splice(j, 1);
-	}
-
-	if (proc.connected) {
-		proc.disconnect();
-	}
-	proc.kill();
 }
 
 function forkAction(action) {
 	return new Promise((resolve, reject) => {
 		const proc = getChild();
-
-		if (!proc.connected || proc.killed) {
-			return reject(new Error('Child process is not connected or has been killed'));
-		}
-		const onMessage = (message) => {
-			cleanup();
+		proc.on('message', (message) => {
 			freeChild(proc);
 
 			if (message.type === 'error') {
 				return reject(new Error(message.message));
 			}
+
 			if (message.type === 'end') {
-				return resolve(message.result);
+				resolve(message.result);
 			}
-		};
-
-		const onError = (err) => {
-			cleanup();
-			freeChild(proc);
-			reject(err);
-		};
-
-		function cleanup() {
-			proc.removeListener('message', onMessage);
-			proc.removeListener('error', onError);
-		}
-
-		proc.on('message', onMessage);
-		proc.on('error', onError);
-		try {
-			proc.send({
-				type: 'action',
-				action: action,
-			});
-		} catch (err) {
-			cleanup();
+		});
+		proc.on('error', (err) => {
+			proc.kill();
 			removeChild(proc);
 			reject(err);
-		}
+		});
+
+		proc.send({
+			type: 'action',
+			action: action,
+		});
 	});
 }
 
@@ -199,12 +162,11 @@ actions.buildCSS = async function buildCSS(data) {
 	try {
 		const opts = {
 			loadPaths: data.paths,
-			importers: [new sass.NodePackageImporter()],
 		};
 		if (data.minify) {
 			opts.silenceDeprecations = [
-				'legacy-js-api', 'color-functions',
-				'global-builtin', 'import', 'if-function',
+				'legacy-js-api', 'mixed-decls', 'color-functions',
+				'global-builtin', 'import',
 			];
 		}
 		const scssOutput = await sass.compileStringAsync(data.source, opts);
