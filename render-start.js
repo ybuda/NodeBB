@@ -5,6 +5,7 @@ const path = require('path');
 
 const config = {
 	url: process.env.NODEBB_URL,
+	secret: process.env.NODEBB_SECRET,
 	database: 'mongo',
 	mongo: {
 		uri: process.env.MONGO_URI || process.env.MONGODB_URI,
