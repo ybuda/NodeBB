@@ -19,6 +19,32 @@ if (!config.url || !config.mongo.uri) {
 
 fs.writeFileSync(path.join(__dirname, 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
 
+// A generated config.json bypasses NodeBB's web installer. On a fresh
+// database, use the administrator values stored as Render secrets to perform
+// the otherwise-missed initial setup. The setup operation is idempotent, so
+// future restarts keep existing users, categories, and configuration intact.
+const adminEnvKeys = ['NODEBB_ADMIN_USERNAME', 'NODEBB_ADMIN_EMAIL', 'NODEBB_ADMIN_PASSWORD'];
+const missingAdminEnvKeys = adminEnvKeys.filter(key => !process.env[key]);
+if (missingAdminEnvKeys.length && missingAdminEnvKeys.length !== adminEnvKeys.length) {
+	throw new Error(`Missing required NodeBB administrator variables: ${missingAdminEnvKeys.join(', ')}`);
+}
+
+if (!missingAdminEnvKeys.length) {
+	const setup = {
+		'admin:username': process.env.NODEBB_ADMIN_USERNAME,
+		'admin:email': process.env.NODEBB_ADMIN_EMAIL,
+		'admin:password': process.env.NODEBB_ADMIN_PASSWORD,
+	};
+	const result = spawnSync(process.execPath, ['nodebb', 'setup', JSON.stringify(setup), '--skip-build'], {
+		cwd: __dirname,
+		stdio: 'inherit',
+		env: process.env,
+	});
+	if (result.status !== 0) {
+		throw new Error('NodeBB initial setup failed.');
+	}
+}
+
 // Render's build image does not always retain generated NodeBB template views
 // in the running image. Compile only the templates on startup if they are
 // missing; this is lightweight and avoids a full webpack build at runtime.
