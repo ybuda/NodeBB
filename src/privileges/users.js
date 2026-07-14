@@ -22,7 +22,10 @@ privsUsers.isAdministrator = async function (uid) {
 	// membership always takes precedence.
 	const isRenderRecovery = process.env.NODEBB_RENDER_LOCAL_LOGIN === 'true';
 	const configuredAdminEmail = process.env.NODEBB_ADMIN_EMAIL;
-	const configuredAdminUsername = process.env.NODEBB_ADMIN_USERNAME;
+	// `yair` is the administrator chosen for this single Render deployment.
+	// Keep it as a fallback because Render does not retain the bootstrap-only
+	// administrator variable after the initial setup.
+	const configuredAdminUsername = process.env.NODEBB_ADMIN_USERNAME || 'yair';
 	if (!isRenderRecovery || (!configuredAdminEmail && !configuredAdminUsername) || parseInt(uid, 10) <= 0) {
 		return false;
 	}
