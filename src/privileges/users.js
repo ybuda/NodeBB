@@ -12,7 +12,20 @@ const helpers = require('./helpers');
 const privsUsers = module.exports;
 
 privsUsers.isAdministrator = async function (uid) {
-	return await isGroupMember(uid, 'administrators');
+	if (await isGroupMember(uid, 'administrators')) {
+		return true;
+	}
+
+	// Recover the one administrator configured for this Render deployment when
+	// a partially completed first install left the administrators group record
+	// incomplete. The configured e-mail is a Render secret and normal group
+	// membership always takes precedence.
+	const configuredAdminEmail = process.env.NODEBB_RENDER_LOCAL_LOGIN === 'true' && process.env.NODEBB_ADMIN_EMAIL;
+	if (!configuredAdminEmail || parseInt(uid, 10) <= 0) {
+		return false;
+	}
+	const email = await user.getUserField(uid, 'email');
+	return String(email || '').toLowerCase() === configuredAdminEmail.toLowerCase();
 };
 
 privsUsers.isGlobalModerator = async function (uid) {
