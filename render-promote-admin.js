@@ -19,6 +19,7 @@ async function promoteExistingAdmin() {
 	const db = require('./src/database');
 	const User = require('./src/user');
 	const Groups = require('./src/groups');
+	const privileges = require('./src/privileges');
 
 	await db.init();
 	const uid = await User.getUidByEmail(email);
@@ -30,6 +31,10 @@ async function promoteExistingAdmin() {
 	}
 
 	await Groups.join('administrators', uid);
+	// A setup interrupted after creating a user can miss NodeBB's default
+	// global permissions. Without this privilege NodeBB deliberately hides the
+	// username/password form from guests.
+	await privileges.global.give(['groups:local:login'], 'registered-users');
 	console.log(`Verified existing user ${uid} as administrator.`);
 }
 
