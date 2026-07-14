@@ -25,7 +25,7 @@ fs.writeFileSync(path.join(__dirname, 'config.json'), `${JSON.stringify(config, 
 
 // Upgrade the existing 4.2 database before compiling assets. Without this,
 // the database retains client-script entries for modules removed in 4.14.
-const upgrade = spawnSync(process.execPath, ['nodebb', 'upgrade', '--skip-build'], {
+const upgrade = spawnSync(process.execPath, ['nodebb', 'upgrade'], {
 	cwd: __dirname,
 	stdio: 'inherit',
 	env: process.env,
