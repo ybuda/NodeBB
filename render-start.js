@@ -86,7 +86,14 @@ if (!missingAdminEnvKeys.length) {
 // in the running image. Compile only the templates on startup if they are
 // missing; this is lightweight and avoids a full webpack build at runtime.
 const templatesDir = path.join(__dirname, 'build', 'public', 'templates');
-const requiredTemplates = ['categories.tpl', 'categories.js', 'header.js', 'footer.js'];
+// `composer` is loaded on demand when the user clicks “New Topic”, so it
+// must be present alongside the first-page templates.  Checking only the
+// category shell allowed a partial Render build to start successfully, but
+// left the button apparently unresponsive in the browser.
+const requiredTemplates = [
+	'categories.tpl', 'categories.js', 'header.js', 'footer.js',
+	'composer.tpl', 'composer.js',
+];
 const missingTemplates = () => requiredTemplates.filter(file => !fs.existsSync(path.join(templatesDir, file)));
 
 // The Render free runtime can omit generated views from the build artifact.
