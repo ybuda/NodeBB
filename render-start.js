@@ -21,8 +21,7 @@ fs.writeFileSync(path.join(__dirname, 'config.json'), `${JSON.stringify(config, 
 
 // A generated config.json bypasses NodeBB's web installer. On a fresh
 // database, use the administrator values stored as Render secrets to perform
-// the otherwise-missed initial setup. The setup operation is idempotent, so
-// future restarts keep existing users, categories, and configuration intact.
+// the otherwise-missed initial setup.
 const adminEnvKeys = ['NODEBB_ADMIN_USERNAME', 'NODEBB_ADMIN_EMAIL', 'NODEBB_ADMIN_PASSWORD'];
 const missingAdminEnvKeys = adminEnvKeys.filter(key => !process.env[key]);
 if (missingAdminEnvKeys.length && missingAdminEnvKeys.length !== adminEnvKeys.length) {
@@ -30,33 +29,47 @@ if (missingAdminEnvKeys.length && missingAdminEnvKeys.length !== adminEnvKeys.le
 }
 
 if (!missingAdminEnvKeys.length) {
-	const setup = {
-		'admin:username': process.env.NODEBB_ADMIN_USERNAME,
-		'admin:email': process.env.NODEBB_ADMIN_EMAIL,
-		'admin:password': process.env.NODEBB_ADMIN_PASSWORD,
-	};
-	const runSetup = () => spawnSync(process.execPath, ['nodebb', 'setup', JSON.stringify(setup), '--skip-build'], {
+	// Do not run the full installer on every Render restart. On an existing
+	// database it needlessly rebuilds configuration and makes cold starts take
+	// much longer. The helper exits with code 2 only when no admin user exists.
+	const existingAdmin = spawnSync(process.execPath, ['render-promote-admin.js'], {
 		cwd: __dirname,
 		stdio: 'inherit',
 		env: process.env,
 	});
+	if (existingAdmin.status !== 0 && existingAdmin.status !== 2) {
+		throw new Error('Unable to verify the NodeBB administrator.');
+	}
 
-	let result = runSetup();
-	if (result.status !== 0) {
-		// Registration can create the first user before setup runs. In that case,
-		// NodeBB rejects the duplicate email; promote that existing user and retry
-		// the idempotent setup instead of leaving the forum half-installed.
-		const promotion = spawnSync(process.execPath, ['render-promote-admin.js'], {
+	if (existingAdmin.status === 2) {
+		const setup = {
+			'admin:username': process.env.NODEBB_ADMIN_USERNAME,
+			'admin:email': process.env.NODEBB_ADMIN_EMAIL,
+			'admin:password': process.env.NODEBB_ADMIN_PASSWORD,
+		};
+		const runSetup = () => spawnSync(process.execPath, ['nodebb', 'setup', JSON.stringify(setup), '--skip-build'], {
 			cwd: __dirname,
 			stdio: 'inherit',
 			env: process.env,
 		});
-		if (promotion.status === 0) {
-			result = runSetup();
+
+		let result = runSetup();
+		if (result.status !== 0) {
+			// Registration can create the first user before setup runs. In that case,
+			// NodeBB rejects the duplicate email; promote that existing user and retry
+			// setup instead of leaving the forum half-installed.
+			const promotion = spawnSync(process.execPath, ['render-promote-admin.js'], {
+				cwd: __dirname,
+				stdio: 'inherit',
+				env: process.env,
+			});
+			if (promotion.status === 0) {
+				result = runSetup();
+			}
 		}
-	}
-	if (result.status !== 0) {
-		throw new Error('NodeBB initial setup failed.');
+		if (result.status !== 0) {
+			throw new Error('NodeBB initial setup failed.');
+		}
 	}
 }
 

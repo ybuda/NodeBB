@@ -23,11 +23,14 @@ async function promoteExistingAdmin() {
 	await db.init();
 	const uid = await User.getUidByEmail(email);
 	if (!uid) {
-		throw new Error(`No existing NodeBB user was found for ${email}.`);
+		// A brand-new database has no administrator yet. This is expected: the
+		// caller must run NodeBB's installer in that case.
+		process.exitCode = 2;
+		return;
 	}
 
 	await Groups.join('administrators', uid);
-	console.log(`Promoted existing user ${uid} to administrator.`);
+	console.log(`Verified existing user ${uid} as administrator.`);
 }
 
 promoteExistingAdmin()
