@@ -34,5 +34,13 @@ if (upgrade.status !== 0) {
 	throw new Error('NodeBB database upgrade failed.');
 }
 
-process.argv = [process.execPath, path.join(__dirname, 'nodebb'), 'build'];
-require('./src/cli');
+// Run the documented CLI entry point in a fresh process. This ensures plugin
+// modules are registered before webpack resolves composer and emoji modules.
+const build = spawnSync(process.execPath, ['nodebb', 'build'], {
+	cwd: __dirname,
+	stdio: 'inherit',
+	env: process.env,
+});
+if (build.status !== 0) {
+	throw new Error('NodeBB asset build failed.');
+}
