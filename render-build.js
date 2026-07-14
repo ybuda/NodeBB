@@ -25,7 +25,7 @@ fs.writeFileSync(path.join(__dirname, 'config.json'), `${JSON.stringify(config, 
 
 // Upgrade the existing 4.2 database before compiling assets. Without this,
 // the database retains client-script entries for modules removed in 4.14.
-const upgrade = spawnSync(process.execPath, ['nodebb', 'upgrade'], {
+const upgrade = spawnSync(process.execPath, ['nodebb', 'upgrade', '-s'], {
 	cwd: __dirname,
 	stdio: 'inherit',
 	env: process.env,
@@ -36,7 +36,7 @@ if (upgrade.status !== 0) {
 
 // Run the documented CLI entry point in a fresh process. This ensures plugin
 // modules are registered before webpack resolves composer and emoji modules.
-const build = spawnSync(process.execPath, ['nodebb', 'build'], {
+const build = spawnSync(process.execPath, ['nodebb', 'build', '--series'], {
 	cwd: __dirname,
 	stdio: 'inherit',
 	env: process.env,
