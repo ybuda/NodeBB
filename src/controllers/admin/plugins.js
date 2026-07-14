@@ -11,7 +11,12 @@ pluginsController.get = async function (req, res) {
 	const [compatible, all, trending] = await Promise.all([
 		getCompatiblePlugins(),
 		getAllPlugins(),
-		plugins.listTrending(),
+		// The external plugin registry is optional. A registry/network failure
+		// must not make the entire ACP plugins page unavailable.
+		plugins.listTrending().catch((err) => {
+			winston.warn(`[admin/plugins] Unable to load trending plugins: ${err.message}`);
+			return [];
+		}),
 	]);
 
 	const compatiblePkgNames = compatible.map(pkgData => pkgData.name);
