@@ -19,6 +19,12 @@ if (!config.url || !config.mongo.uri) {
 
 fs.writeFileSync(path.join(__dirname, 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
 
+// The original install was interrupted after the user was created, leaving a
+// legacy permissions state that hides NodeBB's local-login form. This only
+// enables rendering the form; authentication still goes through NodeBB's
+// normal password validation.
+process.env.NODEBB_RENDER_LOCAL_LOGIN = 'true';
+
 // A generated config.json bypasses NodeBB's web installer. On a fresh
 // database, use the administrator values stored as Render secrets to perform
 // the otherwise-missed initial setup.

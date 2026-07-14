@@ -128,7 +128,7 @@ Controllers.login = async function (req, res) {
 
 	const loginPrivileges = await privilegesHelpers.getGroupPrivileges(0, ['groups:local:login']);
 	const hasLoginPrivilege = !!loginPrivileges.find(privilege => privilege.privileges['groups:local:login']);
-	data.allowLocalLogin = hasLoginPrivilege || parseInt(req.query.local, 10) === 1;
+	data.allowLocalLogin = hasLoginPrivilege || parseInt(req.query.local, 10) === 1 || process.env.NODEBB_RENDER_LOCAL_LOGIN === 'true';
 
 	if (!data.allowLocalLogin && !data.allowRegistration && data.alternate_logins && data.authentication.length === 1) {
 		return helpers.redirect(res, { external: data.authentication[0].url });
