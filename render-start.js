@@ -34,19 +34,22 @@ if (missingAdminEnvKeys.length && missingAdminEnvKeys.length !== adminEnvKeys.le
 	throw new Error(`Missing required NodeBB administrator variables: ${missingAdminEnvKeys.join(', ')}`);
 }
 
+// The forum account exists already, so ensure it retains its administrator
+// membership on every start even if Render's bootstrap-only variables were
+// removed after the initial installation.
+const existingAdmin = spawnSync(process.execPath, ['render-promote-admin.js'], {
+	cwd: __dirname,
+	stdio: 'inherit',
+	env: process.env,
+});
+if (existingAdmin.status !== 0 && existingAdmin.status !== 2) {
+	throw new Error('Unable to verify the NodeBB administrator.');
+}
+
 if (!missingAdminEnvKeys.length) {
 	// Do not run the full installer on every Render restart. On an existing
 	// database it needlessly rebuilds configuration and makes cold starts take
 	// much longer. The helper exits with code 2 only when no admin user exists.
-	const existingAdmin = spawnSync(process.execPath, ['render-promote-admin.js'], {
-		cwd: __dirname,
-		stdio: 'inherit',
-		env: process.env,
-	});
-	if (existingAdmin.status !== 0 && existingAdmin.status !== 2) {
-		throw new Error('Unable to verify the NodeBB administrator.');
-	}
-
 	if (existingAdmin.status === 2) {
 		const setup = {
 			'admin:username': process.env.NODEBB_ADMIN_USERNAME,

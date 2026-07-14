@@ -12,9 +12,7 @@ prestart.loadConfig(configFile);
 
 async function promoteExistingAdmin() {
 	const email = process.env.NODEBB_ADMIN_EMAIL;
-	if (!email) {
-		throw new Error('NODEBB_ADMIN_EMAIL is required to promote an existing administrator.');
-	}
+	const username = process.env.NODEBB_ADMIN_USERNAME || 'yair';
 
 	const db = require('./src/database');
 	const User = require('./src/user');
@@ -22,7 +20,7 @@ async function promoteExistingAdmin() {
 	const privileges = require('./src/privileges');
 
 	await db.init();
-	const uid = await User.getUidByEmail(email);
+	const uid = (email && await User.getUidByEmail(email)) || await User.getUidByUsername(username);
 	if (!uid) {
 		// A brand-new database has no administrator yet. This is expected: the
 		// caller must run NodeBB's installer in that case.
@@ -31,6 +29,7 @@ async function promoteExistingAdmin() {
 	}
 
 	await Groups.join('administrators', uid);
+	await Groups.ownership.grant(uid, 'administrators');
 	// A setup interrupted after creating a user can miss NodeBB's default
 	// global permissions. Without this privilege NodeBB deliberately hides the
 	// username/password form from guests.
@@ -39,7 +38,7 @@ async function promoteExistingAdmin() {
 }
 
 promoteExistingAdmin()
-	.then(() => process.exit(0))
+	.then(() => process.exit(process.exitCode || 0))
 	.catch((err) => {
 		console.error(err.stack || err.message);
 		process.exit(1);
