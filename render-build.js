@@ -16,9 +16,9 @@ if (!config.url || !config.secret || !config.mongo.uri) {
 	throw new Error('NODEBB_URL, NODEBB_SECRET, and MONGO_URI are required to build NodeBB.');
 }
 
-// The repository previously included generated files from another NodeBB build.
-// Remove them so webpack only compiles the assets for this installed version.
-fs.rmSync(path.join(__dirname, 'build', 'public'), { recursive: true, force: true });
+// Render restores its build cache between deploys. Remove the entire generated
+// build tree so files compiled by NodeBB 4.2 cannot be reused by NodeBB 4.14.
+fs.rmSync(path.join(__dirname, 'build'), { recursive: true, force: true });
 
 fs.writeFileSync(path.join(__dirname, 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
 process.argv = [process.execPath, path.join(__dirname, 'nodebb'), 'build'];
