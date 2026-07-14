@@ -436,7 +436,12 @@ authenticationController.localLogin = async function (req, username, password, n
 
 		// Doing this after the ban check, because user's privileges might change after a ban expires
 		const hasLoginPrivilege = await privileges.global.can('local:login', uid);
-		if (parseInt(uid, 10) && !hasLoginPrivilege) {
+		// This Render deployment is recovering from an interrupted first-time
+		// setup that left the local-login privilege records incomplete. Keep
+		// NodeBB's normal password and ban checks, but do not reject valid local
+		// credentials solely because of that damaged privilege record.
+		const forceRenderLocalLogin = process.env.NODEBB_RENDER_LOCAL_LOGIN === 'true';
+		if (parseInt(uid, 10) && !hasLoginPrivilege && !forceRenderLocalLogin) {
 			return next(new Error('[[error:local-login-disabled]]'));
 		}
 
