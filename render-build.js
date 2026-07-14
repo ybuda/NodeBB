@@ -2,6 +2,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const { spawnSync } = require('child_process');
 
 const config = {
 	url: process.env.NODEBB_URL,
@@ -21,5 +22,17 @@ if (!config.url || !config.secret || !config.mongo.uri) {
 fs.rmSync(path.join(__dirname, 'build'), { recursive: true, force: true });
 
 fs.writeFileSync(path.join(__dirname, 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
+
+// Upgrade the existing 4.2 database before compiling assets. Without this,
+// the database retains client-script entries for modules removed in 4.14.
+const upgrade = spawnSync(process.execPath, ['nodebb', 'upgrade', '--skip-build'], {
+	cwd: __dirname,
+	stdio: 'inherit',
+	env: process.env,
+});
+if (upgrade.status !== 0) {
+	throw new Error('NodeBB database upgrade failed.');
+}
+
 process.argv = [process.execPath, path.join(__dirname, 'nodebb'), 'build'];
 require('./src/cli');
