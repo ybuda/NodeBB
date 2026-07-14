@@ -12,28 +12,7 @@ const helpers = require('./helpers');
 const privsUsers = module.exports;
 
 privsUsers.isAdministrator = async function (uid) {
-	if (await isGroupMember(uid, 'administrators')) {
-		return true;
-	}
-
-	// Recover the one administrator configured for this Render deployment when
-	// a partially completed first install left the administrators group record
-	// incomplete. The configured e-mail is a Render secret and normal group
-	// membership always takes precedence.
-	const isRenderRecovery = process.env.NODEBB_RENDER_LOCAL_LOGIN === 'true';
-	const configuredAdminEmail = process.env.NODEBB_ADMIN_EMAIL;
-	// `yair` is the administrator chosen for this single Render deployment.
-	// Keep it as a fallback because Render does not retain the bootstrap-only
-	// administrator variable after the initial setup.
-	const configuredAdminUsername = process.env.NODEBB_ADMIN_USERNAME || 'yair';
-	if (!isRenderRecovery || (!configuredAdminEmail && !configuredAdminUsername) || parseInt(uid, 10) <= 0) {
-		return false;
-	}
-	const userData = await user.getUserFields(uid, ['email', 'username']);
-	return (
-		(configuredAdminEmail && String(userData.email || '').toLowerCase() === configuredAdminEmail.toLowerCase()) ||
-		(configuredAdminUsername && String(userData.username || '').toLowerCase() === configuredAdminUsername.toLowerCase())
-	);
+	return await isGroupMember(uid, 'administrators');
 };
 
 privsUsers.isGlobalModerator = async function (uid) {
