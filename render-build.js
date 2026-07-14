@@ -34,6 +34,18 @@ if (upgrade.status !== 0) {
 	throw new Error('NodeBB database upgrade failed.');
 }
 
+// NodeBB 4.14 expects the default composer to be active before client assets
+// are built. Older installations can retain a theme without that active-plugin
+// entry, leaving dependent modules (emoji, drafts) unresolved.
+const activateComposer = spawnSync(process.execPath, ['nodebb', 'activate', 'nodebb-plugin-composer-default'], {
+	cwd: __dirname,
+	stdio: 'inherit',
+	env: process.env,
+});
+if (activateComposer.status !== 0) {
+	throw new Error('Unable to activate the default composer.');
+}
+
 // Run the documented CLI entry point in a fresh process. This ensures plugin
 // modules are registered before webpack resolves composer and emoji modules.
 const build = spawnSync(process.execPath, ['nodebb', 'build', '--series'], {
