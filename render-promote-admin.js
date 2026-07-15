@@ -31,9 +31,14 @@ async function promoteExistingAdmin() {
 	await Groups.join('administrators', uid);
 	await Groups.ownership.grant(uid, 'administrators');
 	// A setup interrupted after creating a user can miss NodeBB's default
-	// global permissions. Without this privilege NodeBB deliberately hides the
-	// username/password form from guests.
-	await privileges.global.give(['groups:local:login'], 'registered-users');
+	// global permissions. Restore the permissions needed by ordinary accounts
+	// for local login, chats, and the user/group directories on every start.
+	await privileges.global.give([
+		'groups:local:login',
+		'groups:chat',
+		'groups:view:users',
+		'groups:view:groups',
+	], 'registered-users');
 	console.log(`Verified existing user ${uid} as administrator.`);
 }
 
