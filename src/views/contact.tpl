@@ -8,7 +8,7 @@
 					<p class="text-muted mb-0">יש לכם שאלה או הודעה? מלאו את הטופס ונחזור אליכם בהקדם.</p>
 				</div>
 
-				<form action="https://formspree.io/f/xqeraokn" method="POST" class="d-flex flex-column gap-3">
+				<form id="contact-form" action="https://formspree.io/f/xqeraokn" method="POST" class="d-flex flex-column gap-3">
 					<input type="hidden" name="_subject" value="הודעה חדשה מטופס יצירת הקשר בפורום" />
 
 					<div>
@@ -31,7 +31,7 @@
 						<textarea id="contact-message" name="message" class="form-control" rows="6" required></textarea>
 					</div>
 
-					<button type="submit" class="btn btn-primary align-self-start px-4">
+					<button id="contact-submit" type="submit" class="btn btn-primary align-self-start px-4">
 						<i class="fa fa-paper-plane me-1" aria-hidden="true"></i>
 						שליחת הודעה
 					</button>
