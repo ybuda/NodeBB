@@ -46,6 +46,26 @@ categoriesController.list = async function (req, res) {
 		firstRun: !(await db.getObjectField('global', 'loginCount')),
 	};
 
+	const isCategoriesPage = req.originalUrl.startsWith(`${nconf.get('relative_path')}/api/categories`) ||
+		req.originalUrl.startsWith(`${nconf.get('relative_path')}/categories`);
+	if (!isCategoriesPage) {
+		const onlineCutoffMinutes = parseInt(meta.config.onlineCutoff, 10) || 30;
+		const onlineCutoff = Date.now() - (onlineCutoffMinutes * 60000);
+		const [postCount, topicCount, userCount, onlineCount] = await Promise.all([
+			db.getObjectField('global', 'postCount'),
+			db.getObjectField('global', 'topicCount'),
+			db.getObjectField('global', 'userCount'),
+			db.sortedSetCount('users:online', onlineCutoff, '+inf'),
+		]);
+		data.showHomepageStats = true;
+		data.homepageStats = {
+			postCount: parseInt(postCount, 10) || 0,
+			topicCount: parseInt(topicCount, 10) || 0,
+			userCount: parseInt(userCount, 10) || 0,
+			onlineCount: parseInt(onlineCount, 10) || 0,
+		};
+	}
+
 	data.categories.forEach((category) => {
 		if (category) {
 			helpers.trimChildren(category);
@@ -53,7 +73,7 @@ categoriesController.list = async function (req, res) {
 		}
 	});
 
-	if (req.originalUrl.startsWith(`${nconf.get('relative_path')}/api/categories`) || req.originalUrl.startsWith(`${nconf.get('relative_path')}/categories`)) {
+	if (isCategoriesPage) {
 		data.title = '[[pages:categories]]';
 		data.breadcrumbs = helpers.buildBreadcrumbs([{ text: data.title }]);
 		res.locals.metaTags.push({

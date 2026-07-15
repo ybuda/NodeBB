@@ -19,6 +19,10 @@ if (!config.url || !config.mongo.uri) {
 
 fs.writeFileSync(path.join(__dirname, 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
 
+// Keep the tracked template overrides available if Render restores an image
+// whose generated template directory needs to be rebuilt on startup.
+require('./render-install-customizations');
+
 // The original install was interrupted after the user was created, leaving a
 // legacy permissions state that hides NodeBB's local-login form. This only
 // enables rendering the form; authentication still goes through NodeBB's

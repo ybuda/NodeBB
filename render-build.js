@@ -23,6 +23,10 @@ fs.rmSync(path.join(__dirname, 'build'), { recursive: true, force: true });
 
 fs.writeFileSync(path.join(__dirname, 'config.json'), `${JSON.stringify(config, null, 2)}\n`);
 
+// Install tracked theme overrides after npm restores node_modules and before
+// NodeBB compiles the production templates.
+require('./render-install-customizations');
+
 // Upgrade the existing 4.2 database before compiling assets. Without this,
 // the database retains client-script entries for modules removed in 4.14.
 const upgrade = spawnSync(process.execPath, ['nodebb', 'upgrade', '-s'], {
