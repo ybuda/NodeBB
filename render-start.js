@@ -82,6 +82,15 @@ if (!missingAdminEnvKeys.length) {
 	}
 }
 
+const contactNavigation = spawnSync(process.execPath, ['render-ensure-navigation.js'], {
+	cwd: __dirname,
+	stdio: 'inherit',
+	env: process.env,
+});
+if (contactNavigation.status !== 0) {
+	throw new Error('Unable to configure the contact navigation item.');
+}
+
 // Render's build image does not always retain generated NodeBB template views
 // in the running image. Compile only the templates on startup if they are
 // missing; this is lightweight and avoids a full webpack build at runtime.
