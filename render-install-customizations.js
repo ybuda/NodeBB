@@ -5,6 +5,7 @@ const path = require('path');
 
 const customizationRoot = path.join(__dirname, 'render-customizations');
 const harmonyRoot = path.join(__dirname, 'node_modules', 'nodebb-theme-harmony');
+const uploadsRoot = path.join(__dirname, 'public', 'uploads', 'system');
 
 function copyDirectory(sourceDir, targetDir) {
 	fs.mkdirSync(targetDir, { recursive: true });
@@ -21,12 +22,21 @@ function copyDirectory(sourceDir, targetDir) {
 
 copyDirectory(path.join(customizationRoot, 'templates'), path.join(harmonyRoot, 'templates'));
 copyDirectory(path.join(customizationRoot, 'public'), path.join(harmonyRoot, 'public'));
+fs.mkdirSync(uploadsRoot, { recursive: true });
+fs.copyFileSync(
+	path.join(customizationRoot, 'assets', 'site-logo.png'),
+	path.join(uploadsRoot, 'site-logo.png')
+);
 
 const pluginPath = path.join(harmonyRoot, 'plugin.json');
 const plugin = JSON.parse(fs.readFileSync(pluginPath, 'utf8'));
 plugin.scripts = Array.isArray(plugin.scripts) ? plugin.scripts : [];
 if (!plugin.scripts.includes('public/profile-hover-card.js')) {
 	plugin.scripts.push('public/profile-hover-card.js');
+}
+plugin.scss = Array.isArray(plugin.scss) ? plugin.scss : [];
+if (!plugin.scss.includes('public/logo-banner.scss')) {
+	plugin.scss.push('public/logo-banner.scss');
 }
 fs.writeFileSync(pluginPath, `${JSON.stringify(plugin, null, 2)}\n`);
 

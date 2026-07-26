@@ -1,0 +1,48 @@
+/* Full-width forum brand banner */
+.brand-container {
+	> .col-12 {
+		justify-content: center;
+		padding-bottom: 1.5rem !important;
+	}
+
+	[component="brand/wrapper"] {
+		width: 100%;
+		max-width: 1220px;
+		padding: 0 !important;
+		margin-inline: auto;
+	}
+
+	[component="brand/anchor"] {
+		display: block;
+		width: 100%;
+		line-height: 0;
+	}
+
+	[component="brand/logo"] {
+		display: block;
+		width: 100% !important;
+		height: clamp(190px, 20vw, 300px) !important;
+		max-width: none !important;
+		object-fit: fill;
+		border: 1px solid rgba(166, 129, 64, 0.45);
+		border-radius: 18px;
+		box-shadow: 0 3px 10px rgba(31, 41, 55, 0.18);
+		background: #f6f0e3;
+	}
+}
+
+@media (max-width: 576px) {
+	.brand-container {
+		padding-inline: 0.75rem !important;
+
+		> .col-12 {
+			padding-bottom: 1rem !important;
+		}
+
+		[component="brand/logo"] {
+			height: auto !important;
+			aspect-ratio: auto;
+			border-radius: 12px;
+		}
+	}
+}
