@@ -54,7 +54,7 @@ if (activateComposer.status !== 0) {
 // ephemeral filesystem. Keep the requested plugins in package.json and
 // activate them during every production build so they survive redeploys.
 for (const plugin of [
-	'nodebb-plugin-user-level',
+	'@nodebb/nodebb-plugin-user-level',
 	'nodebb-plugin-admin-chats',
 ]) {
 	const activation = spawnSync(process.execPath, ['nodebb', 'activate', plugin], {
