@@ -5,3 +5,8 @@ body.template-topic .topic .posts {
 		visibility: visible !important;
 	}
 }
+
+/* Replies should use the full composer opened from the regular reply button. */
+body.template-topic [component="topic/quickreply/container"] {
+	display: none !important;
+}
