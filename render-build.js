@@ -54,6 +54,8 @@ if (activateComposer.status !== 0) {
 // ephemeral filesystem. Keep the requested plugins in package.json and
 // activate them during every production build so they survive redeploys.
 for (const plugin of [
+	'nodebb-plugin-markdown',
+	'nodebb-plugin-extended-markdown',
 	'@nodebb/nodebb-plugin-user-level',
 	'nodebb-plugin-admin-chats',
 ]) {
