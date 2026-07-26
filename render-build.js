@@ -50,6 +50,23 @@ if (activateComposer.status !== 0) {
 	throw new Error('Unable to activate the default composer.');
 }
 
+// Plugins installed through the ACP are lost when Render replaces its
+// ephemeral filesystem. Keep the requested plugins in package.json and
+// activate them during every production build so they survive redeploys.
+for (const plugin of [
+	'nodebb-plugin-user-level',
+	'nodebb-plugin-admin-chats',
+]) {
+	const activation = spawnSync(process.execPath, ['nodebb', 'activate', plugin], {
+		cwd: __dirname,
+		stdio: 'inherit',
+		env: process.env,
+	});
+	if (activation.status !== 0) {
+		throw new Error(`Unable to activate ${plugin}.`);
+	}
+}
+
 // Run the documented CLI entry point in a fresh process. This ensures plugin
 // modules are registered before webpack resolves composer and emoji modules.
 const build = spawnSync(process.execPath, ['nodebb', 'build', '--series'], {
