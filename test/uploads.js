@@ -275,9 +275,9 @@ describe('Upload Controllers', () => {
 			assert(body && body.status && body.status.message);
 		});
 
-		it('should fail to upload file if extension and mime type do not match', async () => {
+		it('should fail to upload file if extension is not allowed', async () => {
 			const oldValue = meta.config.allowedFileExtensions;
-			meta.config.allowedFileExtensions = 'png,jpg,bmp,html';
+			meta.config.allowedFileExtensions = 'png,jpg,bmp';
 
 			try {
 				const uploadEndPoint = `${nconf.get('url')}/api/post/upload`;
@@ -298,7 +298,7 @@ describe('Upload Controllers', () => {
 				const body = await response.json();
 
 				assert.strictEqual(response.status, 500);
-				assert.strictEqual(body?.status?.message, 'Invalid MIME type');
+				assert.strictEqual(body?.status?.message, 'Invalid file type .html. Allowed types are: .png, .jpg, .bmp, .jpeg');
 			} finally {
 				meta.config.allowedFileExtensions = oldValue;
 			}
@@ -436,7 +436,7 @@ describe('Upload Controllers', () => {
 				csrf_token
 			);
 			assert.strictEqual(response.statusCode, 500);
-			assert.equal(body.error, '[[error:invalid-image-type, image/png&#44; image/jpeg&#44; image/pjpeg&#44; image/jpg&#44; image/gif&#44; image/svg+xml]]');
+			assert.equal(body.error, '[[error:invalid-image-type, text/html, image/png&#44; image/jpeg&#44; image/pjpeg&#44; image/jpg&#44; image/gif&#44; image/svg+xml]]');
 		});
 
 		it('should fail to upload category image with invalid json params', async () => {
