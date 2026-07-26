@@ -38,6 +38,9 @@ plugin.scss = Array.isArray(plugin.scss) ? plugin.scss : [];
 if (!plugin.scss.includes('public/logo-banner.scss')) {
 	plugin.scss.push('public/logo-banner.scss');
 }
+if (!plugin.scss.includes('public/post-actions-always-visible.scss')) {
+	plugin.scss.push('public/post-actions-always-visible.scss');
+}
 fs.writeFileSync(pluginPath, `${JSON.stringify(plugin, null, 2)}\n`);
 
 console.log('Installed Render theme customizations.');

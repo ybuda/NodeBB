@@ -1,0 +1,7 @@
+/* Keep the voting and post-action toolbar visible without requiring hover. */
+body.template-topic .topic .posts {
+	[component="post"] [component="post/actions"] {
+		opacity: 1 !important;
+		visibility: visible !important;
+	}
+}
